@@ -1,14 +1,37 @@
 [project]
 name = "nearshore-transform"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fast last-stage nearshore spectral wave transformation: backward ray-traced transfer operators with depth-limited breaking"
 readme = "README.md"
-authors = [
-    { name = "dave", email = "d.johnson@oceanum.science" }
-]
+authors = [{ name = "Oceanum", email = "developers@oceanum.science" }]
+license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+    "xarray>=2024.1",
+    "wavespectra>=4.0",
+    "netcdf4>=1.6",
+]
+
+[project.optional-dependencies]
+datamesh = ["oceanum>=1.0"]
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
