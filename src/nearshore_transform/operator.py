@@ -30,7 +30,7 @@ import xarray as xr
 from ._version import __version__ as _pkg_version
 from .bathymetry import LocalGrid
 from .dispersion import ccg
-from .rays import STATUS_EXITED, SpeedField, trace_backward
+from .rays import STATUS_EXITED, STATUS_LANDED, STATUS_LOST, SpeedField, trace_backward
 
 
 def dir_to_theta(dir_nautical_deg: np.ndarray) -> np.ndarray:
@@ -241,6 +241,7 @@ def build_operator(
 
     nf, ndt, ndb, kk = freqs.size, dirs.size, dirs.size, boundary_xy.shape[0]
     t_op = np.zeros((nf, ndt, kk, ndb))
+    n_rays = n_lost = n_landed = 0
 
     # Sub-ray direction offsets across each target bin (bin-centre sampling).
     offsets = (np.arange(nsub) + 0.5) / nsub - 0.5  # in units of bin width
@@ -257,10 +258,17 @@ def build_operator(
         fan = trace_backward(fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min)
 
         ok = fan.status == STATUS_EXITED
+        n_rays += fan.status.size
+        n_lost += int(np.sum(fan.status == STATUS_LOST))
+        n_landed += int(np.sum(fan.status == STATUS_LANDED))
         if not ok.any():
             continue
         jbin = np.repeat(np.arange(ndt), nsub)[ok]
         depth_exit = grid.sample_depth(fan.x[ok], fan.y[ok])
+        # The ccg ratio is the pointwise density invariant; composed with the
+        # direction-bin interpolation below it yields the energy-flux
+        # directional transform (the interpolation column-sum supplies the
+        # dtheta_t/dtheta_b Jacobian). Do not "fix" this to a flux ratio.
         coef = ccg(omega, depth_exit) / ccg_t / nsub * np.exp(-fan.atten[ok])
 
         # boundary-point weights from exit perimeter position
@@ -292,6 +300,9 @@ def build_operator(
             "ds": ds,
             "d_min": d_min,
             "max_steps": max_steps,
-            "cf_jonswap": -1.0 if cf_jonswap is None else cf_jonswap,
+            # 0.0 == friction disabled (physically identical to None)
+            "cf_jonswap": 0.0 if cf_jonswap is None else cf_jonswap,
+            "lost_fraction": n_lost / max(n_rays, 1),
+            "landed_fraction": n_landed / max(n_rays, 1),
         },
     )

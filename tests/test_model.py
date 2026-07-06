@@ -91,6 +91,16 @@ def test_missing_site_dim_rejected_for_multi_bp(built_model):
         built_model.transform(efth)
 
 
+def test_reordered_boundary_sites_rejected(built_model):
+    """Sites carrying lon/lat coords in the wrong order must be rejected."""
+    efth = boundary_spectra(nt=1)
+    good = efth.assign_coords(lon=("site", [114.3, 114.3]), lat=("site", [-28.85, -28.75]))
+    assert built_model.transform(good) is not None
+    swapped = efth.assign_coords(lon=("site", [114.3, 114.3]), lat=("site", [-28.75, -28.85]))
+    with pytest.raises(ValueError, match="boundary points"):
+        built_model.transform(swapped)
+
+
 def test_mismatched_freqs_rejected(built_model):
     efth = boundary_spectra().assign_coords(freq=FREQS * 1.5)
     with pytest.raises(ValueError, match="freq"):

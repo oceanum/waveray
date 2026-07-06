@@ -67,7 +67,9 @@ when K > 1.
 ## Limitations (v0)
 
 - No diffraction: accuracy degrades inside harbours / behind breakwaters.
-- No bottom friction or triad interactions along the path.
+- Bottom friction IS included (JONSWAP, integrated along ray paths) and is ON
+  by default with the SWAN swell coefficient `cf_jonswap=0.038`; pass
+  `cf_jonswap=None` for pure refraction + shoaling. No triad interactions.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per
   site against observations.

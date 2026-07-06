@@ -83,6 +83,10 @@ class SiteModel:
             dirs=np.asarray(dirs, dtype=float),
             **ray_kwargs,
         )
+        if grid.lon0 is not None:
+            # retained so transform() can verify boundary spectra site order
+            op.attrs["bp_lon"] = [float(v) for v in bpts[:, 0]]
+            op.attrs["bp_lat"] = [float(v) for v in bpts[:, 1]]
         return cls(operator=op, gamma=gamma, breaking_method=breaking_method)
 
     # ------------------------------------------------------------------ #
@@ -126,6 +130,22 @@ class SiteModel:
             raise ValueError(
                 f"efth {site_dim} size {efth.sizes[site_dim]} != operator K {op.n_boundary}"
             )
+        if (
+            had_site
+            and "bp_lon" in op.attrs
+            and "lon" in efth.coords
+            and "lat" in efth.coords
+            and efth["lon"].size == op.n_boundary
+        ):
+            # guard against silently reordered boundary spectra
+            if not (
+                np.allclose(np.asarray(efth["lon"].values), op.attrs["bp_lon"], atol=5e-3)
+                and np.allclose(np.asarray(efth["lat"].values), op.attrs["bp_lat"], atol=5e-3)
+            ):
+                raise ValueError(
+                    f"efth {site_dim} lon/lat coordinates do not match the operator's "
+                    "boundary points (wrong sites or wrong order)"
+                )
 
         ordered = efth.transpose(..., site_dim, "freq", "dir")
         lead_dims = ordered.dims[:-3]
