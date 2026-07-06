@@ -43,7 +43,9 @@ def ray_paths_geojson(
 
     Parameters mirror :func:`nearshore_transform.operator.build_operator`
     (same rays, same physics); ``target_xy`` is in grid metres — use
-    ``grid.to_local(lon, lat)`` first for geographic targets.
+    ``grid.to_local(lon, lat)`` first for geographic targets. ``dirs`` is
+    assumed to be a uniform full-circle grid (as for build_operator); with
+    ``nsub > 1`` the sub-ray fan width is 360/len(dirs) degrees.
 
     Parameters
     ----------
