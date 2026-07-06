@@ -112,6 +112,16 @@ class LocalGrid:
         y = (lat - self.lat0) * _M_PER_DEG_LAT
         return x, y
 
+    def to_lonlat(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Local metres -> geographic degrees (inverse of :meth:`to_local`)."""
+        if self.lon0 is None or self.lat0 is None:
+            raise ValueError("grid has no geographic origin (built from local coords)")
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        lon = self.lon0 + x / (_M_PER_DEG_LAT * np.cos(np.deg2rad(self.lat0)))
+        lat = self.lat0 + y / _M_PER_DEG_LAT
+        return lon, lat
+
     def sample_depth(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Bilinear depth [m, positive down] at local points; land contributes 0."""
         return bilinear(self._depth_filled, self.x, self.y, x, y)

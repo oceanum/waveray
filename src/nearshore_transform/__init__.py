@@ -7,6 +7,7 @@ breaking at the target.
 
 from ._version import __version__
 from .bathymetry import LocalGrid, fetch_datamesh_bathymetry
+from .export import ray_paths_geojson
 from .model import SiteModel
 from .operator import TransferOperator, build_operator
 
@@ -17,4 +18,5 @@ __all__ = [
     "__version__",
     "build_operator",
     "fetch_datamesh_bathymetry",
+    "ray_paths_geojson",
 ]

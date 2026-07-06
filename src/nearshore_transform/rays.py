@@ -80,6 +80,7 @@ class RayFan:
     y: np.ndarray  # (n,) exit / stop y [m]
     theta: np.ndarray  # (n,) propagation direction at exit [rad, math convention]
     atten: np.ndarray  # (n,) path-integrated friction decay exponent (>= 0)
+    paths: list[np.ndarray] | None = None  # per-ray (m_i, 2) local-metre polylines
 
 
 def _rhs(
@@ -98,12 +99,17 @@ def trace_backward(
     ds: float,
     max_steps: int,
     d_min: float = 0.3,
+    record_paths: bool = False,
 ) -> RayFan:
     """Trace rays backward from (x0, y0) with propagation directions theta0.
 
     Rays stop when they leave the grid bounds (STATUS_EXITED, exit point
     clipped to the boundary), when the local depth falls below ``d_min``
     (STATUS_LANDED), or after ``max_steps`` (STATUS_LOST).
+
+    With ``record_paths=True`` the full trajectory of every ray is recorded
+    and returned in ``RayFan.paths`` (list of (m_i, 2) local-metre arrays,
+    ordered from the start point outward).
     """
     grid = field.grid
     xmin, xmax, ymin, ymax = grid.bounds
@@ -116,6 +122,10 @@ def trace_backward(
     atten = np.zeros(n)
     status = np.full(n, STATUS_LOST, dtype=np.int8)
     active = np.ones(n, dtype=bool)
+    history: list[np.ndarray] | None = None
+    stop_step = np.full(n, 0, dtype=np.int64)
+    if record_paths:
+        history = [np.column_stack([x, y])]
 
     if not (xmin <= x0 <= xmax and ymin <= y0 <= ymax):
         raise ValueError(f"start point ({x0}, {y0}) outside grid bounds {grid.bounds}")
@@ -174,5 +184,13 @@ def trace_backward(
         status[idx[out]] = STATUS_EXITED
         status[idx[landed & ~out]] = STATUS_LANDED
         active[idx[out | landed]] = False
+        if history is not None:
+            history.append(np.column_stack([x, y]))
+            stop_step[idx[out | landed]] = len(history) - 1
+            stop_step[active] = len(history) - 1
 
-    return RayFan(status=status, x=x, y=y, theta=th, atten=atten)
+    paths = None
+    if history is not None:
+        traj = np.stack(history)  # (nsteps+1, n, 2)
+        paths = [traj[: stop_step[i] + 1, i, :] for i in range(n)]
+    return RayFan(status=status, x=x, y=y, theta=th, atten=atten, paths=paths)

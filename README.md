@@ -64,6 +64,18 @@ model.to_netcdf("geraldton_berth.nc")            # reuse without rebuilding
 dimension (K boundary points, same order as `boundary_points`) is required
 when K > 1.
 
+Ray paths can be exported for inspection (QGIS, EIDOS, any web map) as a
+GeoJSON FeatureCollection — one MultiLineString per (freq, dir) bin, with
+period, direction, per-ray status and friction decay in the properties:
+
+```python
+from nearshore_transform import ray_paths_geojson
+
+x, y = bathy_grid.to_local(lon, lat)
+ray_paths_geojson(bathy_grid, (x[0], y[0]), freqs=[0.06, 0.1],
+                  dirs=np.arange(0, 360, 15), path="rays.geojson")
+```
+
 ## Limitations (v0)
 
 - No diffraction: accuracy degrades inside harbours / behind breakwaters.
