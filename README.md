@@ -92,7 +92,13 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
 
 ## Limitations (v0)
 
-- No diffraction: accuracy degrades inside harbours / behind breakwaters.
+- No diffraction: accuracy degrades inside harbours / behind breakwaters, and
+  island shadows are sharper than reality (rays block, they do not leak).
+- Island / headland sheltering *is* included — a ray grounding on any land
+  carries no energy — but blocking is binary and only as good as the
+  bathymetry: a feature smaller than ~2 grid cells is smoothed away by the
+  bilinear depth sampling and will not shelter (GEBCO at ~450 m cannot
+  shelter behind a small reef or islet). See `tests/test_island.py`.
 - Bottom friction IS included (JONSWAP, integrated along ray paths) and is ON
   by default with the SWAN swell coefficient `cf_jonswap=0.038`; pass
   `cf_jonswap=None` for pure refraction + shoaling. No triad interactions.
