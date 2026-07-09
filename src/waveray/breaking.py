@@ -26,19 +26,41 @@ import numpy as np
 from .dispersion import wavenumber
 
 
+def freq_resolution(freqs: np.ndarray) -> np.ndarray:
+    """Frequency bin widths [Hz], matching ``wavespectra``'s ``SpecArray.df``."""
+    freqs = np.asarray(freqs, dtype=float)
+    return np.gradient(freqs) if freqs.size > 1 else np.ones(1)
+
+
+def dir_resolution(dirs: np.ndarray) -> float:
+    """Direction bin width [deg], matching ``wavespectra``'s ``SpecArray.dd``."""
+    dirs = np.asarray(dirs, dtype=float)
+    return abs(float(dirs[1] - dirs[0])) if dirs.size > 1 else 1.0
+
+
 def spectral_moment(
     efth: np.ndarray, freqs: np.ndarray, dirs: np.ndarray, n: int = 0
 ) -> np.ndarray:
-    """n-th frequency moment of efth(..., nf, ndir) [density per Hz per deg]."""
+    """n-th frequency moment of efth(..., nf, ndir) [density per Hz per deg].
+
+    Uses the same quadrature as ``wavespectra`` — directions summed with a
+    constant bin width, frequencies with ``np.gradient`` widths (not
+    trapezoidal, which would halve the two edge bins) — so ``hm0`` here equals
+    ``efth.spec.hs(tail=False)`` exactly.
+    """
     efth = np.asarray(efth, dtype=float)
     freqs = np.asarray(freqs, dtype=float)
-    ddir = 360.0 / dirs.size  # uniform bins enforced upstream
-    ef = efth.sum(axis=-1) * ddir  # (..., nf)
-    return np.trapezoid(ef * freqs**n, freqs, axis=-1)
+    ef = efth.sum(axis=-1) * dir_resolution(dirs)  # (..., nf), = wavespectra oned()
+    return (ef * freqs**n * freq_resolution(freqs)).sum(axis=-1)
 
 
 def hm0(efth: np.ndarray, freqs: np.ndarray, dirs: np.ndarray) -> np.ndarray:
-    """Significant wave height Hm0 = 4 sqrt(m0) of efth(..., nf, ndir)."""
+    """Significant wave height Hm0 = 4 sqrt(m0) of efth(..., nf, ndir).
+
+    Equals ``wavespectra``'s ``efth.spec.hs(tail=False)``. The high-frequency
+    tail correction wavespectra applies when ``freq[-1] > 0.333`` Hz is not
+    included here (the transformation is applied to the resolved bins only).
+    """
     return 4.0 * np.sqrt(spectral_moment(efth, freqs, dirs, n=0))
 
 

@@ -28,6 +28,7 @@ import xarray as xr
 from .bathymetry import LocalGrid
 from .breaking import apply_breaking
 from .operator import TransferOperator, build_operator
+from .spectra import set_wavespectra_attrs
 
 
 @dataclass
@@ -92,16 +93,20 @@ class SiteModel:
     # ------------------------------------------------------------------ #
     def transform(
         self,
-        efth: xr.DataArray,
+        efth: xr.DataArray | xr.Dataset,
         site_dim: str = "site",
         tide: xr.DataArray | np.ndarray | float | None = None,
         breaking: bool = True,
     ) -> xr.DataArray:
         """Transform boundary spectra to the target point.
 
+        The returned spectrum carries wavespectra's CF attributes, so the
+        ``.spec`` accessor works on it directly (``out.spec.hs()``).
+
         Parameters
         ----------
-        efth : boundary spectra, dims (..., [site_dim,] freq, dir). The
+        efth : boundary spectra, dims (..., [site_dim,] freq, dir), or any
+            wavespectra-readable Dataset holding an ``efth`` variable. The
             ``site_dim`` size must equal the operator's K and follow the
             same order as the boundary points given at build time; it may be
             omitted when K == 1.
@@ -111,6 +116,11 @@ class SiteModel:
         breaking : apply the depth-limited cap (default True).
         """
         op = self.operator
+        if isinstance(efth, xr.Dataset):
+            # accept a wavespectra SpecDataset (or any Dataset holding 'efth')
+            if "efth" not in efth:
+                raise ValueError("Dataset input must contain an 'efth' variable")
+            efth = efth["efth"]
         if "freq" not in efth.dims or "dir" not in efth.dims:
             raise ValueError("efth must have 'freq' and 'dir' dims (wavespectra convention)")
         if not np.allclose(efth["freq"].values, op.freq, rtol=1e-4):
@@ -188,7 +198,7 @@ class SiteModel:
         )
         if scale is not None:
             result.attrs["breaking_scale_min"] = float(np.min(scale))
-        return result
+        return set_wavespectra_attrs(result)
 
     # ------------------------------------------------------------------ #
     def to_netcdf(self, path: str) -> None:

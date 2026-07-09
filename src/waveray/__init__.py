@@ -10,6 +10,7 @@ from .bathymetry import LocalGrid, fetch_datamesh_bathymetry
 from .export import ray_paths_geojson
 from .model import SiteModel
 from .operator import TransferOperator, build_operator
+from .spectra import set_wavespectra_attrs, to_specdataset
 
 __all__ = [
     "LocalGrid",
@@ -19,4 +20,6 @@ __all__ = [
     "build_operator",
     "fetch_datamesh_bathymetry",
     "ray_paths_geojson",
+    "set_wavespectra_attrs",
+    "to_specdataset",
 ]

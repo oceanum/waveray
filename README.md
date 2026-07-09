@@ -15,6 +15,21 @@ pip install waveray                # core
 pip install "waveray[datamesh]"    # + Oceanum Datamesh bathymetry/spectra access
 ```
 
+## Documentation
+
+| Guide | Read it for |
+|---|---|
+| [Installation](docs/installation.md) | Install, extras, environment |
+| [Quickstart](docs/quickstart.md) | A working example in 20 lines |
+| [Concepts](docs/concepts.md) | What the operator is, and the physics inside it |
+| [User guide](docs/usage.md) | Bathymetry, boundary points, tide, breaking, persistence, ray export |
+| [wavespectra interop](docs/wavespectra.md) | Spectral conventions and the `.spec` accessor |
+| [Validation](docs/validation.md) | Measured skill against parent SWAN models |
+| [Limitations](docs/limitations.md) | What waveray does **not** model |
+| [API reference](docs/api.md) | Every public function and its arguments |
+
+Start at [`docs/index.md`](docs/index.md).
+
 ## Method
 
 Setup, once per site:
