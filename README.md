@@ -76,6 +76,20 @@ ray_paths_geojson(bathy_grid, (x[0], y[0]), freqs=[0.06, 0.1],
                   dirs=np.arange(0, 360, 15), path="rays.geojson")
 ```
 
+## Notebooks
+
+Two executed, illustrated notebooks (plots included in the committed output):
+
+| Notebook | What it shows |
+|---|---|
+| [`notebooks/01_holland_downscaling.ipynb`](notebooks/01_holland_downscaling.ipynb) | End-to-end downscaling of a SWAN 1 km hindcast to a point off **Noordwijk aan Zee** through storms Pia and Henk: bathymetry, ray geometry and the arrival cone, offshore vs nearshore Hs, the directional spectrum before/after, validation against SWAN (r ≈ 0.99), and what depth-limited breaking contributes. |
+| [`notebooks/02_abrolhos_validation.ipynb`](notebooks/02_abrolhos_validation.ipynb) | Held-out validation on a **reef-fronted WA coast**, and an ablation isolating JONSWAP bottom friction (Hm0 bias +1.11 m → +0.18 m when friction is on). |
+
+```bash
+uv sync --extra datamesh --extra notebooks
+DATAMESH_TOKEN=... uv run jupyter lab notebooks/
+```
+
 ## Limitations (v0)
 
 - No diffraction: accuracy degrades inside harbours / behind breakwaters.

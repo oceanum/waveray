@@ -15,6 +15,11 @@ dependencies = [
 
 [project.optional-dependencies]
 datamesh = ["oceanum>=1.0"]
+notebooks = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.11.0",
+    "nbconvert>=7.17.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]
