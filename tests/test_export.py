@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from nearshore_transform import LocalGrid, ray_paths_geojson
-from nearshore_transform.rays import SpeedField, trace_backward
+from waveray import LocalGrid, ray_paths_geojson
+from waveray.rays import SpeedField, trace_backward
 
 FREQS = np.array([0.06, 0.1])
 DIRS = np.arange(0.0, 360.0, 30.0)

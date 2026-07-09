@@ -8,8 +8,8 @@ geometric behaviour, not surf-zone realism.
 
 import numpy as np
 
-from nearshore_transform.bathymetry import LocalGrid
-from nearshore_transform.operator import build_operator
+from waveray.bathymetry import LocalGrid
+from waveray.operator import build_operator
 
 DIRS = np.arange(0.0, 360.0, 10.0)
 FREQS = np.array([0.07, 0.09])

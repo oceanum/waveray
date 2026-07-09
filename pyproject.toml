@@ -1,17 +1,34 @@
 [project]
-name = "nearshore-transform"
+name = "waveray"
 version = "0.1.0"
-description = "Fast last-stage nearshore spectral wave transformation: backward ray-traced transfer operators with depth-limited breaking"
+description = "Fast nearshore spectral wave transformation: backward ray-traced transfer operators with refraction, shoaling, bottom friction and depth-limited breaking"
 readme = "README.md"
 authors = [{ name = "Oceanum", email = "developers@oceanum.science" }]
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
+keywords = ["waves", "nearshore", "spectral", "ray-tracing", "swan", "metocean", "oceanography"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
 dependencies = [
     "numpy>=2.0",
     "xarray>=2024.1",
     "wavespectra>=4.0",
     "netcdf4>=1.6",
 ]
+
+[project.urls]
+Homepage = "https://github.com/oceanum/waveray"
+Repository = "https://github.com/oceanum/waveray"
+Issues = "https://github.com/oceanum/waveray/issues"
 
 [project.optional-dependencies]
 datamesh = ["oceanum>=1.0"]

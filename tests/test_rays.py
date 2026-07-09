@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from nearshore_transform.bathymetry import LocalGrid
-from nearshore_transform.dispersion import phase_speed
-from nearshore_transform.rays import STATUS_EXITED, SpeedField, trace_backward
+from waveray.bathymetry import LocalGrid
+from waveray.dispersion import phase_speed
+from waveray.rays import STATUS_EXITED, SpeedField, trace_backward
 
 
 def plane_beach_grid(d_off=30.0, length=20_000.0, width=16_000.0, nx=201, ny=161):

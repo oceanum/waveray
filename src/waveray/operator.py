@@ -140,7 +140,7 @@ class TransferOperator:
                 "target_x": self.target_x,
                 "target_y": self.target_y,
                 "depth_target": self.depth_target,
-                "package": f"nearshore-transform {_pkg_version}",
+                "package": f"waveray {_pkg_version}",
                 **self.attrs,
             },
         )

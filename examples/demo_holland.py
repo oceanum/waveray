@@ -24,8 +24,8 @@ import time
 import numpy as np
 import xarray as xr
 
-from nearshore_transform import SiteModel, fetch_datamesh_bathymetry
-from nearshore_transform.breaking import hm0
+from waveray import SiteModel, fetch_datamesh_bathymetry
+from waveray.breaking import hm0
 
 BBOX = (3.85, 52.00, 4.55, 52.50)  # southern Holland coast around Noordwijk
 TARGET = (4.42, 52.24)  # ~1.5 km off Noordwijk aan Zee

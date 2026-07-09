@@ -41,7 +41,7 @@ def ray_paths_geojson(
 ) -> dict:
     """Trace backward rays from a target and return them as GeoJSON.
 
-    Parameters mirror :func:`nearshore_transform.operator.build_operator`
+    Parameters mirror :func:`waveray.operator.build_operator`
     (same rays, same physics); ``target_xy`` is in grid metres — use
     ``grid.to_local(lon, lat)`` first for geographic targets. ``dirs`` is
     assumed to be a uniform full-circle grid (as for build_operator); with

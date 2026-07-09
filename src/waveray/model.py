@@ -2,7 +2,7 @@
 
 Typical use::
 
-    from nearshore_transform import SiteModel
+    from waveray import SiteModel
 
     model = SiteModel.build(
         bathy=bathy_dataarray,          # or a LocalGrid
@@ -57,7 +57,7 @@ class SiteModel:
         ``target`` and ``boundary_points`` are (lon, lat) when ``bathy`` is
         geographic (DataArray, or LocalGrid with an origin), else (x, y) in
         grid metres. ``ray_kwargs`` pass through to
-        :func:`nearshore_transform.operator.build_operator` (nsub, ds,
+        :func:`waveray.operator.build_operator` (nsub, ds,
         max_steps, d_min).
         """
         grid = (

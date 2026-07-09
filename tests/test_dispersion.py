@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from nearshore_transform.dispersion import GRAV, ccg, group_speed, phase_speed, wavenumber
+from waveray.dispersion import GRAV, ccg, group_speed, phase_speed, wavenumber
 
 
 def test_dispersion_residual_across_regimes():

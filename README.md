@@ -1,4 +1,4 @@
-# nearshore-transform
+# waveray
 
 Fast last-stage nearshore spectral wave transformation: precomputed backward
 ray-traced linear transfer operators over local bathymetry, with parametric
@@ -7,6 +7,13 @@ depth-limited wave breaking at the target.
 Built to downscale directional wave spectra from SWAN (or WW3) hindcasts and
 nowcasts through the final nearshore transformation to a target site — decades
 of hourly spectra in seconds, no wave model in the runtime loop.
+
+## Install
+
+```bash
+pip install waveray                # core
+pip install "waveray[datamesh]"    # + Oceanum Datamesh bathymetry/spectra access
+```
 
 ## Method
 
@@ -43,7 +50,7 @@ refraction, shoaling, sheltering and breaking.
 
 ```python
 import numpy as np
-from nearshore_transform import SiteModel, fetch_datamesh_bathymetry
+from waveray import SiteModel, fetch_datamesh_bathymetry
 
 bathy = fetch_datamesh_bathymetry(
     "gebco_2025", bbox=(114.35, -28.95, 114.65, -28.60), positive="up"
@@ -69,7 +76,7 @@ GeoJSON FeatureCollection — one MultiLineString per (freq, dir) bin, with
 period, direction, per-ray status and friction decay in the properties:
 
 ```python
-from nearshore_transform import ray_paths_geojson
+from waveray import ray_paths_geojson
 
 x, y = bathy_grid.to_local(lon, lat)
 ray_paths_geojson(bathy_grid, (x[0], y[0]), freqs=[0.06, 0.1],

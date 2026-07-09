@@ -18,8 +18,8 @@ import time
 
 import numpy as np
 
-from nearshore_transform import SiteModel, fetch_datamesh_bathymetry
-from nearshore_transform.breaking import hm0
+from waveray import SiteModel, fetch_datamesh_bathymetry
+from waveray.breaking import hm0
 
 BBOX = (114.30, -28.95, 114.65, -28.60)  # local domain around Geraldton
 TARGET = (114.58, -28.775)  # just seaward of the port

@@ -6,9 +6,9 @@ on a plane beach) computed from the independently-tested dispersion module.
 
 import numpy as np
 
-from nearshore_transform.bathymetry import LocalGrid
-from nearshore_transform.dispersion import group_speed, phase_speed
-from nearshore_transform.operator import (
+from waveray.bathymetry import LocalGrid
+from waveray.dispersion import group_speed, phase_speed
+from waveray.operator import (
     TransferOperator,
     build_operator,
     dir_to_theta,

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from nearshore_transform.breaking import apply_breaking, hm0, hm0_max
+from waveray.breaking import apply_breaking, hm0, hm0_max
 
 FREQS = np.linspace(0.04, 0.4, 19)
 DIRS = np.arange(0.0, 360.0, 15.0)

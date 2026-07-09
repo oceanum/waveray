@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from nearshore_transform import LocalGrid, SiteModel
+from waveray import LocalGrid, SiteModel
 
 FREQS = np.linspace(0.04, 0.25, 12)
 DIRS = np.arange(0.0, 360.0, 15.0)

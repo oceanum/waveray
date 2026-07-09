@@ -170,7 +170,7 @@ def fetch_datamesh_bathymetry(
     positive : "up" for elevation sources (GEBCO convention), "down" for depth.
     token : Datamesh token; defaults to the DATAMESH_TOKEN environment variable.
 
-    Requires the ``oceanum`` package (``pip install nearshore-transform[datamesh]``).
+    Requires the ``oceanum`` package (``pip install waveray[datamesh]``).
     """
     from oceanum.datamesh import Connector  # noqa: PLC0415 (optional dependency)
 
