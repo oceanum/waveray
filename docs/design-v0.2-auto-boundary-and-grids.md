@@ -1,6 +1,4 @@
-# v0.2 design scope: automatic boundary definition & gridded output
-
-Status: scoped 2026-07-06, not implemented. Two independent extensions.
+design scope: automatic boundary definition & gridded output
 
 ## 1. Automatic ray-origin boundary from target + bathymetry
 
