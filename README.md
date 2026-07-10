@@ -1,8 +1,15 @@
 # waveray
 
+[![Docs](https://img.shields.io/badge/docs-oceanum.github.io%2Fwaveray-blue)](https://oceanum.github.io/waveray/)
+[![CI](https://github.com/oceanum/waveray/actions/workflows/ci.yml/badge.svg)](https://github.com/oceanum/waveray/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/waveray)](https://pypi.org/project/waveray/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+
 Fast last-stage nearshore spectral wave transformation: precomputed backward
 ray-traced linear transfer operators over local bathymetry, with parametric
 depth-limited wave breaking at the target.
+
+**📖 Documentation: <https://oceanum.github.io/waveray/>**
 
 Built to downscale directional wave spectra from SWAN (or WW3) hindcasts and
 nowcasts through the final nearshore transformation to a target site — decades
@@ -17,18 +24,20 @@ pip install "waveray[datamesh]"    # + Oceanum Datamesh bathymetry/spectra acces
 
 ## Documentation
 
+Full docs: **<https://oceanum.github.io/waveray/>**
+
 | Guide | Read it for |
 |---|---|
-| [Installation](docs/installation.md) | Install, extras, environment |
-| [Quickstart](docs/quickstart.md) | A working example in 20 lines |
-| [Concepts](docs/concepts.md) | What the operator is, and the physics inside it |
-| [User guide](docs/usage.md) | Bathymetry, boundary points, tide, breaking, persistence, ray export |
-| [wavespectra interop](docs/wavespectra.md) | Spectral conventions and the `.spec` accessor |
-| [Validation](docs/validation.md) | Measured skill against parent SWAN models |
-| [Limitations](docs/limitations.md) | What waveray does **not** model |
-| [API reference](docs/api.md) | Every public function and its arguments |
+| [Installation](https://oceanum.github.io/waveray/installation/) | Install, extras, environment |
+| [Quickstart](https://oceanum.github.io/waveray/quickstart/) | A working example in 20 lines |
+| [Concepts](https://oceanum.github.io/waveray/concepts/) | What the operator is, and the physics inside it |
+| [User guide](https://oceanum.github.io/waveray/usage/) | Bathymetry, boundary points, tide, breaking, persistence, ray export |
+| [wavespectra interop](https://oceanum.github.io/waveray/wavespectra/) | Spectral conventions and the `.spec` accessor |
+| [Validation](https://oceanum.github.io/waveray/validation/) | Measured skill against parent SWAN models |
+| [Limitations](https://oceanum.github.io/waveray/limitations/) | What waveray does **not** model |
+| [API reference](https://oceanum.github.io/waveray/api/) | Every public function and its arguments |
 
-Start at [`docs/index.md`](docs/index.md).
+The pages are plain Markdown in [`docs/`](docs) and render on GitHub too.
 
 ## Method
 

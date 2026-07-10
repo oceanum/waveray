@@ -1,0 +1,85 @@
+site_name: waveray
+site_description: >-
+  Fast nearshore spectral wave transformation: backward ray-traced transfer
+  operators with refraction, shoaling, bottom friction and depth-limited breaking
+site_url: https://oceanum.github.io/waveray/
+repo_url: https://github.com/oceanum/waveray
+repo_name: oceanum/waveray
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Oceanum Ltd — Apache-2.0
+
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quickstart: quickstart.md
+  - Guides:
+      - Concepts: concepts.md
+      - User guide: usage.md
+      - wavespectra interoperability: wavespectra.md
+  - Reference:
+      - API reference: api.md
+      - Validation: validation.md
+      - Limitations: limitations.md
+  - Background:
+      - Gridded output & auto-boundary design: design-v0.2-auto-boundary-and-grids.md
+      - Nearshore transformation, state of the art: research-nearshore-transformation-sota-2026-07-06.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+
+plugins:
+  - search
+  # renders GitHub-style "> [!NOTE]" callouts as Material admonitions, so the
+  # same markdown reads correctly on github.com and on this site
+  - callouts
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/oceanum/waveray
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/waveray/
+
+strict: true

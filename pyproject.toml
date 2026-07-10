@@ -26,9 +26,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/oceanum/waveray"
+Homepage = "https://oceanum.github.io/waveray/"
+Documentation = "https://oceanum.github.io/waveray/"
 Repository = "https://github.com/oceanum/waveray"
 Issues = "https://github.com/oceanum/waveray/issues"
+Changelog = "https://github.com/oceanum/waveray/releases"
 
 [project.optional-dependencies]
 datamesh = ["oceanum>=1.0"]
@@ -46,6 +48,11 @@ build-backend = "uv_build"
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-callouts>=1.16.1",
+    "mkdocs-material>=9.7.6",
 ]
 
 [tool.ruff]

@@ -22,7 +22,7 @@ loop.
 | [Limitations](limitations.md) | What waveray does **not** model, and when not to use it |
 | [API reference](api.md) | Every public function and its arguments |
 
-Two executed notebooks with plots live in [`../notebooks/`](../notebooks):
+Two executed notebooks with plots live in [`notebooks/`](https://github.com/oceanum/waveray/tree/main/notebooks):
 an end-to-end Dutch-coast downscaling, and a reef-coast validation study.
 
 ## The idea in one paragraph

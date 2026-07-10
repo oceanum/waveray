@@ -4,3 +4,4 @@ __pycache__/
 .claude/
 .ipynb_checkpoints/
 dist/
+site/

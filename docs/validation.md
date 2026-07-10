@@ -6,7 +6,7 @@ interior SWAN output sites are held out as truth, and the ray-traced operator
 transforms the boundary spectra to those sites. waveray never sees SWAN's
 answer at the truth site.
 
-Both studies are reproducible notebooks in [`../notebooks/`](../notebooks).
+Both studies are reproducible notebooks in [`notebooks/`](https://github.com/oceanum/waveray/tree/main/notebooks).
 
 ## Dutch coast — smooth sandy shoreface
 
