@@ -55,7 +55,6 @@ nav:
       - Limitations: limitations.md
   - Background:
       - Gridded output & auto-boundary design: design-v0.2-auto-boundary-and-grids.md
-      - Nearshore transformation, state of the art: research-nearshore-transformation-sota-2026-07-06.md
 
 markdown_extensions:
   - admonition
