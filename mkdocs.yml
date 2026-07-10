@@ -47,6 +47,7 @@ nav:
   - Guides:
       - Concepts: concepts.md
       - User guide: usage.md
+      - Oceanum Datamesh: datamesh.md
       - wavespectra interoperability: wavespectra.md
   - Reference:
       - API reference: api.md
@@ -83,3 +84,12 @@ extra:
       link: https://pypi.org/project/waveray/
 
 strict: true
+
+# with strict: true these become build failures, so a bad cross-reference
+# anchor or an unlisted page cannot reach the site
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+    unrecognized_links: warn

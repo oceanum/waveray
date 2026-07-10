@@ -49,3 +49,6 @@ export DATAMESH_TOKEN="..."
 Everything except `fetch_datamesh_bathymetry` works without it — you can supply
 bathymetry as a plain `xarray.DataArray` from any source (GEBCO, EMODnet, a
 national survey grid, a `.nc` file on disk).
+
+See [Working with Oceanum Datamesh](datamesh.md) for tokens, catalog search,
+datasource ids and the query recipes.

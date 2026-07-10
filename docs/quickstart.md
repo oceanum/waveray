@@ -73,5 +73,6 @@ grid = LocalGrid.from_dataarray(bathy, positive="down")   # "down" = depths
 model = SiteModel.build(bathy=grid, target=(lon, lat), ...)
 ```
 
-Next: [Concepts](concepts.md) for what is inside the operator, or the
-[User guide](usage.md) for the practical knobs.
+Next: [Concepts](concepts.md) for what is inside the operator, the
+[User guide](usage.md) for the practical knobs, or [Working with Oceanum
+Datamesh](datamesh.md) if that is where your data lives.

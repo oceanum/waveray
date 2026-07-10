@@ -17,6 +17,7 @@ loop.
 | [Quickstart](quickstart.md) | A working example in 20 lines |
 | [Concepts](concepts.md) | What the operator is, and the physics it contains |
 | [User guide](usage.md) | Bathymetry, boundary points, tide, breaking, persistence, ray export |
+| [Oceanum Datamesh](datamesh.md) | Fetching bathymetry and spectra from Datamesh, and its gotchas |
 | [wavespectra interoperability](wavespectra.md) | Input/output conventions and the `.spec` accessor |
 | [Validation](validation.md) | Measured skill against parent SWAN models |
 | [Limitations](limitations.md) | What waveray does **not** model, and when not to use it |

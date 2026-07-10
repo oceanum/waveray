@@ -11,6 +11,7 @@ from waveray import LocalGrid, fetch_datamesh_bathymetry
 import xarray as xr
 
 # From Oceanum Datamesh (needs the `datamesh` extra + DATAMESH_TOKEN)
+# -> see docs/datamesh.md for tokens, catalog search and datasource ids
 grid = fetch_datamesh_bathymetry("gebco_2023", bbox=(3.85, 52.0, 4.55, 52.5), positive="up")
 
 # From any DataArray with 1-D lon/lat (or latitude/longitude, or y/x) coords

@@ -32,6 +32,7 @@ Full docs: **<https://oceanum.github.io/waveray/>**
 | [Quickstart](https://oceanum.github.io/waveray/quickstart/) | A working example in 20 lines |
 | [Concepts](https://oceanum.github.io/waveray/concepts/) | What the operator is, and the physics inside it |
 | [User guide](https://oceanum.github.io/waveray/usage/) | Bathymetry, boundary points, tide, breaking, persistence, ray export |
+| [Oceanum Datamesh](https://oceanum.github.io/waveray/datamesh/) | Tokens, catalog search, datasource ids, query recipes and gotchas |
 | [wavespectra interop](https://oceanum.github.io/waveray/wavespectra/) | Spectral conventions and the `.spec` accessor |
 | [Validation](https://oceanum.github.io/waveray/validation/) | Measured skill against parent SWAN models |
 | [Limitations](https://oceanum.github.io/waveray/limitations/) | What waveray does **not** model |
