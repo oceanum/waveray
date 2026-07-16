@@ -10,9 +10,11 @@ from .bathymetry import LocalGrid, fetch_datamesh_bathymetry
 from .export import ray_paths_geojson
 from .model import SiteModel
 from .operator import TransferOperator, build_operator
+from .rays import BoundaryLine
 from .spectra import set_wavespectra_attrs, to_specdataset
 
 __all__ = [
+    "BoundaryLine",
     "LocalGrid",
     "SiteModel",
     "TransferOperator",

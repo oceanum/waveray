@@ -22,6 +22,7 @@ is the same expression.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -30,7 +31,14 @@ import xarray as xr
 from ._version import __version__ as _pkg_version
 from .bathymetry import LocalGrid
 from .dispersion import ccg
-from .rays import STATUS_EXITED, STATUS_LANDED, STATUS_LOST, SpeedField, trace_backward
+from .rays import (
+    STATUS_EXITED,
+    STATUS_LANDED,
+    STATUS_LOST,
+    BoundaryLine,
+    SpeedField,
+    trace_backward,
+)
 
 
 def dir_to_theta(dir_nautical_deg: np.ndarray) -> np.ndarray:
@@ -185,6 +193,7 @@ def build_operator(
     max_steps: int | None = None,
     d_min: float = 0.3,
     cf_jonswap: float | None = 0.038,
+    boundary_mode: str = "bbox",
 ) -> TransferOperator:
     """Build a transfer operator by backward ray tracing.
 
@@ -192,8 +201,10 @@ def build_operator(
     ----------
     grid : local bathymetry grid.
     target_xy : target point (x, y) in grid metres.
-    boundary_xy : (K, 2) boundary spectra points in grid metres; they are
-        projected onto the domain perimeter for alongshore interpolation.
+    boundary_xy : (K, 2) boundary spectra points in grid metres. With
+        ``boundary_mode="bbox"`` they are projected onto the domain perimeter
+        for alongshore interpolation; with ``"line"``/``"ring"`` they are the
+        vertices of the ray-terminating geometry, taken in the given order.
     freqs : (nf,) frequencies [Hz] of the boundary spectra.
     dirs : (ndir,) direction bins [coming-from nautical deg] of the boundary
         spectra; also used as the target bins. Must be uniformly spaced.
@@ -204,12 +215,30 @@ def build_operator(
     cf_jonswap : JONSWAP bottom friction coefficient [m^2 s^-3] integrated
         along each ray path (0.038 = SWAN swell default); None disables
         friction (pure refraction + shoaling).
+    boundary_mode : where rays terminate and how they pick up boundary energy.
+        ``"bbox"`` (default) — rays run to the grid perimeter and are
+        interpolated along it (the sites are projected onto the perimeter).
+        ``"line"`` — rays stop at the open polyline through the sites (in
+        order); ``ccg`` and friction are sampled at the crossing, so interior
+        sites are handled without the spurious extra shoaling/friction of the
+        bbox path. ``"ring"`` — same, with the sites closed into a polygon
+        (use when the target sits inside a ring of sites). In ``line``/``ring``
+        mode a ray that reaches the bbox without crossing the geometry falls
+        back to its nearest site (a warning reports the escaped fraction).
     """
+    if boundary_mode not in ("bbox", "line", "ring"):
+        raise ValueError(f"boundary_mode must be 'bbox', 'line' or 'ring', got {boundary_mode!r}")
     freqs = np.asarray(freqs, dtype=float)
     dirs = np.asarray(dirs, dtype=float)
     boundary_xy = np.atleast_2d(np.asarray(boundary_xy, dtype=float))
     if boundary_xy.shape[1] != 2:
         raise ValueError("boundary_xy must be (K, 2)")
+
+    line = None
+    if boundary_mode in ("line", "ring"):
+        line = BoundaryLine(
+            x=boundary_xy[:, 0], y=boundary_xy[:, 1], closed=(boundary_mode == "ring")
+        )
 
     ddir = np.diff(np.sort(dirs % 360.0))
     widths = np.r_[ddir, 360.0 - ddir.sum()]
@@ -241,7 +270,7 @@ def build_operator(
 
     nf, ndt, ndb, kk = freqs.size, dirs.size, dirs.size, boundary_xy.shape[0]
     t_op = np.zeros((nf, ndt, kk, ndb))
-    n_rays = n_lost = n_landed = 0
+    n_rays = n_lost = n_landed = n_exited = n_escaped = 0
 
     # Sub-ray direction offsets across each target bin (bin-centre sampling).
     offsets = (np.arange(nsub) + 0.5) / nsub - 0.5  # in units of bin width
@@ -255,12 +284,15 @@ def build_operator(
         fld = SpeedField.build(grid, omega, d_min=d_min, cf_jonswap=cf_jonswap)
         ccg_t = float(ccg(np.array(omega), np.array(depth_t)))
 
-        fan = trace_backward(fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min)
+        fan = trace_backward(
+            fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min, boundary_line=line
+        )
 
         ok = fan.status == STATUS_EXITED
         n_rays += fan.status.size
         n_lost += int(np.sum(fan.status == STATUS_LOST))
         n_landed += int(np.sum(fan.status == STATUS_LANDED))
+        n_exited += int(np.sum(ok))
         if not ok.any():
             continue
         jbin = np.repeat(np.arange(ndt), nsub)[ok]
@@ -271,10 +303,34 @@ def build_operator(
         # dtheta_t/dtheta_b Jacobian). Do not "fix" this to a flux ratio.
         coef = ccg(omega, depth_exit) / ccg_t / nsub * np.exp(-fan.atten[ok])
 
-        # boundary-point weights from exit perimeter position
-        p_exit = _perimeter_coord(fan.x[ok], fan.y[ok], grid.bounds)
-        blo, bhi, wlo, whi = _circular_bracket_weights(p_exit, p_bp_sorted, perimeter)
-        klo, khi = order[blo], order[bhi]
+        # boundary-point (alongshore) weights: from the bbox-perimeter position
+        # in bbox mode, or from the crossed line segment in line/ring mode.
+        if line is None:
+            p_exit = _perimeter_coord(fan.x[ok], fan.y[ok], grid.bounds)
+            blo, bhi, wlo, whi = _circular_bracket_weights(p_exit, p_bp_sorted, perimeter)
+            klo, khi = order[blo], order[bhi]
+        else:
+            seg = fan.seg[ok]
+            uu = fan.u[ok]
+            crossed = seg >= 0
+            sc = np.clip(seg, 0, None)
+            klo = np.where(crossed, line.seg_a[sc], 0)
+            khi = np.where(crossed, line.seg_b[sc], 0)
+            wlo = np.where(crossed, 1.0 - uu, 0.0)
+            whi = np.where(crossed, uu, 0.0)
+            if not crossed.all():
+                # rays that reached the bbox without crossing the line -> the
+                # spectrum of their nearest site, all weight on the lower node.
+                esc = ~crossed
+                d2 = (fan.x[ok][esc, None] - boundary_xy[:, 0][None, :]) ** 2 + (
+                    fan.y[ok][esc, None] - boundary_xy[:, 1][None, :]
+                ) ** 2
+                nearest = np.argmin(d2, axis=1)
+                klo[esc] = nearest
+                khi[esc] = nearest
+                wlo[esc] = 1.0
+                whi[esc] = 0.0
+                n_escaped += int(esc.sum())
 
         # boundary-direction weights from exit propagation direction
         d_exit = theta_to_dir(fan.theta[ok])
@@ -284,6 +340,15 @@ def build_operator(
         for kb, wb in ((klo, wlo), (khi, whi)):
             for lb, wd in ((llo, vlo), (lhi, vhi)):
                 np.add.at(t_op[i], (jbin, kb, lb), coef * wb * wd)
+
+    escaped_fraction = n_escaped / max(n_exited, 1)
+    if line is not None and escaped_fraction > 0.01:
+        warnings.warn(
+            f"{escaped_fraction:.1%} of exiting rays reached the grid boundary without "
+            f"crossing the boundary {boundary_mode}; they fell back to their nearest site. "
+            "Widen the line so it spans the ray fan, or use boundary_mode='ring'.",
+            stacklevel=2,
+        )
 
     return TransferOperator(
         T=t_op,
@@ -302,7 +367,9 @@ def build_operator(
             "max_steps": max_steps,
             # 0.0 == friction disabled (physically identical to None)
             "cf_jonswap": 0.0 if cf_jonswap is None else cf_jonswap,
+            "boundary_mode": boundary_mode,
             "lost_fraction": n_lost / max(n_rays, 1),
             "landed_fraction": n_landed / max(n_rays, 1),
+            "escaped_fraction": escaped_fraction,
         },
     )

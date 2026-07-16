@@ -5,6 +5,7 @@ on a plane beach) computed from the independently-tested dispersion module.
 """
 
 import numpy as np
+import pytest
 
 from waveray.bathymetry import LocalGrid
 from waveray.dispersion import group_speed, phase_speed
@@ -213,6 +214,104 @@ def test_friction_attenuates_along_shallow_paths():
     )
     ratio = op_deep.apply(e_b).sum() / op_deep_free.apply(e_b).sum()
     assert np.isclose(ratio, 1.0, rtol=1e-4)
+
+
+def test_line_mode_samples_line_depth_not_bbox_edge():
+    """With boundary_mode='line' the shoaling ratio is sampled where the ray
+    crosses the site line (20 m), not at the deeper grid edge (30 m)."""
+    grid = plane_beach_grid()  # x: 0..20000, depth 30 -> 0
+    f = 0.08
+    x_t = 20_000.0 * (1.0 - 10.0 / 30.0)  # target at 10 m
+    x_b = 20_000.0 * (1.0 - 20.0 / 30.0)  # boundary line at 20 m
+    bxy = np.array([[x_b, -11_000.0], [x_b, 11_000.0]])  # vertical, spans the fan
+    # Only the shore-normal (offshore-going) rays cross this one-sided line;
+    # alongshore/shoreward rays escape or land, which is expected here — they
+    # carry no energy in the shore-normal boundary bin we probe below.
+    with pytest.warns(UserWarning, match="without crossing the boundary line"):
+        op = build_operator(
+            grid,
+            target_xy=(x_t, 0.0),
+            boundary_xy=bxy,
+            freqs=np.array([f]),
+            dirs=DIRS,
+            nsub=15,
+            cf_jonswap=None,
+            boundary_mode="line",
+        )
+    e_b = np.zeros((2, 1, DIRS.size))
+    e_b[:, 0, DIRS == 270.0] = 1.0  # uniform shoreward swell at both sites
+    ratio = op.apply(e_b).sum()  # transferred density in the shore-normal bin
+
+    omega = 2 * np.pi * f
+    at_line = group_speed(omega, np.array(20.0)) / group_speed(omega, np.array(10.0))
+    at_edge = group_speed(omega, np.array(30.0)) / group_speed(omega, np.array(10.0))
+    assert np.isclose(ratio, at_line, rtol=5e-2), (ratio, at_line)
+    # the whole point: the line result is NOT the deeper bbox-edge shoaling
+    assert abs(ratio - at_line) < abs(ratio - at_edge)
+    assert op.attrs["boundary_mode"] == "line"
+
+
+def test_ring_mode_encloses_target_no_escapes():
+    """A target inside a ring of sites: every ray crosses the ring, nothing
+    escapes, and a uniform boundary field is conserved (flat bathymetry)."""
+    grid = flat_grid(size=16_000.0)
+    r = 5_000.0
+    ang = np.deg2rad(np.arange(0.0, 360.0, 45.0))
+    bxy = np.column_stack([r * np.cos(ang), r * np.sin(ang)])  # 8-point ring
+    op = build_operator(
+        grid,
+        target_xy=(0.0, 0.0),
+        boundary_xy=bxy,
+        freqs=np.array([0.08]),
+        dirs=DIRS,
+        nsub=9,
+        cf_jonswap=None,
+        boundary_mode="ring",
+    )
+    assert op.attrs["escaped_fraction"] == 0.0
+    e_b = np.ones((bxy.shape[0], 1, DIRS.size))  # uniform density 1 everywhere
+    e_t = op.apply(e_b)
+    # flat depth -> no shoaling: uniform-in, uniform-out per direction bin
+    assert np.allclose(e_t, 1.0, atol=2e-2)
+
+
+def test_line_mode_escape_falls_back_to_nearest_site_and_warns():
+    """Rays that miss a short open line fall back to the nearest site and the
+    build warns about the escaped fraction."""
+    grid = flat_grid(size=16_000.0)
+    # short line near the west edge spanning only |y| < 1500: rays toward N/E/S
+    # never cross it and must fall back.
+    bxy = np.array([[-5_000.0, -1_500.0], [-5_000.0, 1_500.0]])
+    with pytest.warns(UserWarning, match="without crossing the boundary line"):
+        op = build_operator(
+            grid,
+            target_xy=(0.0, 0.0),
+            boundary_xy=bxy,
+            freqs=np.array([0.08]),
+            dirs=DIRS,
+            nsub=5,
+            cf_jonswap=None,
+            boundary_mode="line",
+        )
+    assert op.attrs["escaped_fraction"] > 0.0
+    # still a usable operator: uniform field transfers to finite, ~uniform out
+    e_b = np.ones((2, 1, DIRS.size))
+    e_t = op.apply(e_b)
+    assert np.all(np.isfinite(e_t))
+    assert np.allclose(e_t, 1.0, atol=2e-2)
+
+
+def test_invalid_boundary_mode_raises():
+    grid = flat_grid()
+    with pytest.raises(ValueError, match="boundary_mode"):
+        build_operator(
+            grid,
+            target_xy=(0.0, 0.0),
+            boundary_xy=np.array([[-5000.0, 0.0]]),
+            freqs=np.array([0.08]),
+            dirs=DIRS,
+            boundary_mode="perimeter",
+        )
 
 
 def test_operator_netcdf_roundtrip(tmp_path):
