@@ -1,6 +1,6 @@
 [project]
 name = "waveray"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fast nearshore spectral wave transformation: backward ray-traced transfer operators with refraction, shoaling, bottom friction and depth-limited breaking"
 readme = "README.md"
 authors = [{ name = "Oceanum", email = "developers@oceanum.science" }]
