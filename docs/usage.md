@@ -43,21 +43,38 @@ sheltering matters.
 
 ## Choosing a domain and boundary points
 
-Rays terminate at the **edge of the bathymetry grid you supply**, and boundary
-spectra are interpolated by each ray's exit position along that perimeter.
-Therefore:
+Where rays terminate — and so where they pick up the boundary spectrum — is set
+by `boundary_mode`:
 
-- Draw the `bbox` so its edge passes through, or close to, your hindcast's
-  spectral output sites. The transfer coefficient uses the depth at the ray's
-  exit point, so a boundary site sitting well inside the domain will be treated
-  as if it were on the edge.
+- **`"bbox"`** (default): rays run to the **edge of the bathymetry grid** and are
+  interpolated by their exit position along that perimeter. Draw the `bbox` so
+  its edge passes through, or close to, your hindcast's spectral output sites —
+  the transfer coefficient uses the depth at the ray's exit point, so a site
+  sitting well inside the domain is treated as if it were on the edge (extra,
+  spurious shoaling and friction between the site and the grid edge).
+- **`"line"` / `"ring"`**: rays stop at their **first crossing of the polyline
+  (open) or polygon (closed ring) through `boundary_points`**, in the order you
+  supply them. `c*cg`, bottom friction and the alongshore interpolation are all
+  sampled at that crossing, so **output sites inside the bathymetry are handled
+  correctly** without matching the grid edge to them. Use `"line"` for a target
+  inshore of a transect (the classic line along the 20 m contour) and `"ring"`
+  when the target is nested inside a ring of sites. A ray that reaches the grid
+  edge without crossing an open line falls back to its nearest site; the build
+  warns and records the escaped fraction in the operator attributes.
+
+Either way:
+
 - Both geometries work: a target **nested inside a ring** of output sites, or a
-  target **inshore of a line** of them (the classic transect along the 20 m
-  contour). In the second case the coast behind the target closes the problem
-  naturally — shoreward rays ground out, which is correct.
-- Order `boundary_points` to match the `site` dimension of your spectra. When
+  target **inshore of a line** of them. With `"bbox"`, the coast behind the
+  target closes the problem naturally — shoreward rays ground out, which is
+  correct.
+- Order `boundary_points` to match the `site` dimension of your spectra — and,
+  in `line`/`ring` mode, so they trace the boundary geometry in sequence. When
   the spectra carry `lon`/`lat` coordinates, `transform` verifies this and
   raises rather than silently mixing sites up.
+
+See [`notebooks/03_boundary_line_termination.ipynb`](https://github.com/oceanum/waveray/blob/main/notebooks/03_boundary_line_termination.ipynb)
+for a worked, plotted comparison of the three modes.
 
 ## Choosing a target
 

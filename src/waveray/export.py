@@ -20,7 +20,7 @@ import numpy as np
 from .bathymetry import LocalGrid
 from .dispersion import wavenumber
 from .operator import dir_to_theta
-from .rays import STATUS_EXITED, STATUS_LANDED, SpeedField, trace_backward
+from .rays import STATUS_EXITED, STATUS_LANDED, BoundaryLine, SpeedField, trace_backward
 
 _STATUS_NAMES = {STATUS_EXITED: "exited", STATUS_LANDED: "landed"}
 
@@ -38,6 +38,8 @@ def ray_paths_geojson(
     cf_jonswap: float | None = 0.038,
     stride: int = 5,
     path: str | Path | None = None,
+    boundary_xy: np.ndarray | None = None,
+    boundary_mode: str = "bbox",
 ) -> dict:
     """Trace backward rays from a target and return them as GeoJSON.
 
@@ -54,6 +56,10 @@ def ray_paths_geojson(
     nsub : sub-rays per direction bin (1 gives one clean line per bin).
     stride : keep every ``stride``-th vertex (plus first and last).
     path : optionally write the FeatureCollection to this file.
+    boundary_xy : (K, 2) site vertices in grid metres; required when
+        ``boundary_mode`` is ``"line"`` or ``"ring"`` so the rays terminate on
+        that geometry instead of the grid perimeter (matches build_operator).
+    boundary_mode : ``"bbox"`` (default), ``"line"`` or ``"ring"``.
 
     Returns
     -------
@@ -66,6 +72,15 @@ def ray_paths_geojson(
     dirs = np.atleast_1d(np.asarray(dirs, dtype=float))
     if lonlat is None:
         lonlat = grid.lon0 is not None
+
+    if boundary_mode not in ("bbox", "line", "ring"):
+        raise ValueError(f"boundary_mode must be 'bbox', 'line' or 'ring', got {boundary_mode!r}")
+    line = None
+    if boundary_mode in ("line", "ring"):
+        if boundary_xy is None:
+            raise ValueError(f"boundary_xy is required when boundary_mode={boundary_mode!r}")
+        bxy = np.atleast_2d(np.asarray(boundary_xy, dtype=float))
+        line = BoundaryLine(x=bxy[:, 0], y=bxy[:, 1], closed=(boundary_mode == "ring"))
 
     dx, dy = grid.spacing
     if ds is None:
@@ -85,7 +100,15 @@ def ray_paths_geojson(
         omega = 2.0 * np.pi * f
         fld = SpeedField.build(grid, omega, d_min=d_min, cf_jonswap=cf_jonswap)
         fan = trace_backward(
-            fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min, record_paths=True
+            fld,
+            tx,
+            ty,
+            theta0,
+            ds=ds,
+            max_steps=max_steps,
+            d_min=d_min,
+            record_paths=True,
+            boundary_line=line,
         )
         depth_t = float(grid.sample_depth(np.array([tx]), np.array([ty]))[0])
         wavelength = float(2.0 * np.pi / wavenumber(np.array(omega), np.array(depth_t)))
