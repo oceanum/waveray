@@ -236,6 +236,56 @@ def test_agrow_with_friction_matches_closed_form():
     assert np.isclose(e0, e0_expected, rtol=3e-2), (e0, e0_expected)
 
 
+def test_calm_wind_is_identical_to_no_wind():
+    """A zero wind must reproduce the wind-free operator bit for bit.
+
+    The no-wind code path is only reached with ``wind=None``; this pins the
+    wind path itself to the same answer when the forcing vanishes, so the
+    feature cannot perturb a calm case.
+    """
+    grid = flat_grid()
+    op_none = build(grid, cf_jonswap=0.038)
+    op_calm = build(grid, cf_jonswap=0.038, wind=(0.0, 270.0), agrow=True)
+    assert np.array_equal(op_none.T, op_calm.T), "calm wind perturbed the operator"
+    assert op_calm.E0 is not None and not op_calm.E0.any(), "calm wind seeded energy"
+    assert op_calm.attrs["growth_clipped_fraction"] == 0.0
+
+
+def test_opposing_wind_leaves_upwind_bins_untouched():
+    """Against the wind the Komen cutoff is exact, so those bins must match
+    the wind-free operator exactly (down-wind bins legitimately differ)."""
+    grid = flat_grid()
+    op_free = build(grid, cf_jonswap=0.038)
+    op_wind = build(grid, cf_jonswap=0.038, wind=(U10, 90.0))  # wind from the east
+    same = np.isclose(op_free.T, op_wind.T, rtol=0, atol=0)
+    # the bins that carry energy from the west (into the wind) must be exact
+    upwind = DIRS == 270.0
+    assert np.array_equal(op_free.T[:, :, :, upwind], op_wind.T[:, :, :, upwind])
+    assert same.any(), "no bin at all was left untouched by an opposing wind"
+
+
+def test_max_growth_must_exceed_one():
+    grid = flat_grid(n=21)
+    for bad in (0.0, -1.0, 1.0):
+        with pytest.raises(ValueError, match="max_growth"):
+            build(grid, wind=(U10, 270.0), max_growth=bad)
+
+
+def test_non_finite_gridded_wind_is_rejected():
+    """A NaN in the wind field would otherwise poison every coefficient."""
+    grid = flat_grid(n=21)
+    xs = np.linspace(-6_000.0, 6_000.0, 5)
+    ys = np.linspace(-6_000.0, 6_000.0, 5)
+    u = np.full((ys.size, xs.size), U10)
+    u[2, 2] = np.nan
+    wind_ds = xr.Dataset(
+        {"u10": (("y", "x"), u), "v10": (("y", "x"), np.zeros_like(u))},
+        coords={"x": xs, "y": ys},
+    )
+    with pytest.raises(ValueError, match="non-finite"):
+        build(grid, wind=wind_ds)
+
+
 def test_growth_clip_bounds_the_runaway():
     """High frequency over a long fetch: unbalanced wind input would grow
     without limit, so max_growth must cap it, warn, and stay finite."""

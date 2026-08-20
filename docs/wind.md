@@ -96,15 +96,21 @@ knowing:
 > [!WARNING]
 > Wind input on its own is **unbounded**. In SWAN it is balanced by
 > whitecapping and quadruplet interactions; both are nonlinear in `E` and
-> cannot live in a spectrum-independent linear operator. SWAN will not even
-> run the configuration this package implements: it raises a level-2 error
-> for a third-generation wind without quadruplets, and when forced past it
-> the run never converges and returns zero.
+> cannot live in a spectrum-independent linear operator. SWAN guards against
+> the configuration this package implements — it raises a level-2 error for a
+> third-generation wind without quadruplets, which you must explicitly
+> override — and with good reason.
 
-The runaway is worst at high frequency, where `cg` is small so a ray spends
-a long time under the wind: at 0.9 Hz with U10 = 15 m/s, `exp(B·L/cg)` over
-5 km is about `e³⁶`. Left alone that produces nonsense — an early build of
-this feature returned Hs = 7×10²⁴ m at 5 km fetch — and eventually `inf`.
+**This is not an artefact of the ray method.** Run SWAN itself with wind
+input and no sinks, over the plane-beach case in the validation suite, and it
+grows a 2 m swell to **77.8 m** across a 15 km fetch. waveray on the same
+case reaches 35.0 m with its ceiling removed, and 3.1 m with the default
+ceiling on. Both models run away; the ceiling is what stops this one.
+
+The runaway is worst at high frequency, where `cg` is small so a ray spends a
+long time under the wind: at 0.9 Hz with U10 = 15 m/s, `u* = 0.605`,
+`c = 1.73` and `cg = 0.87` m/s give `B = 0.0155 s⁻¹`, so `exp(B·L/cg)` over
+5 km is `e⁸⁹`. Left alone that produces nonsense, and eventually `inf`.
 
 `build_operator(..., max_growth=100.0)` (the default) floors the growth
 exponent so no single ray path can gain more than a hundredfold in energy.
@@ -223,35 +229,50 @@ operator keeps its wind physics.
 
 **Analytic.** `tests/test_wind.py` pins the implementation to closed forms on
 flat-bottom domains, where straight rays make the path integrals analytic:
-the operator gain equals `exp(B L / cg)` for a following wind,
-opposing/cross winds leave the operator bit-for-bit unchanged, and the
-`agrow` seed equals `q/r (exp(rL) - 1) / (c cg)` with and without friction.
-A constant gridded Dataset reproduces the uniform tuple exactly, and
-`wind=None` is verified identical to the pre-wind operator.
+the operator gain equals `exp(B L / cg)` for a following wind, the bins
+facing into an opposing wind are unchanged to the last bit (the `max[0, ·]`
+cutoff is exact; down-wind bins of course do change), and the `agrow` seed
+equals `q/r (exp(rL) - 1) / (c cg)` with and without friction. A constant
+gridded Dataset reproduces the uniform tuple exactly, and a calm wind
+reproduces the wind-free operator bit for bit.
 
 **Against SWAN.** `tests/test_validation_swan.py` runs stationary SWAN 41.51A
 in the official `delftwaves/swan` docker image on identical boundary spectra
 (see [Validation](validation.md#against-swan-4151a-docker)). Measured with a
 12 m/s wind:
 
-| Case | waveray / SWAN Hs |
-|---|---|
-| Swell + wind, plane beach, 15 km fetch | ≈ 1.0 – 1.3 |
-| Wind sea from calm, `f ≤ 0.4 Hz`, 1–5 km fetch | 0.54 – 0.70 |
+| Case | SWAN physics | waveray / SWAN Hs |
+|---|---|---|
+| Wind sea from calm, `f ≤ 0.4 Hz`, 1–5 km fetch | wind input only | **0.60 – 0.76** |
+| Swell + wind, plane beach, 15 km fetch | full (quads + whitecapping) | ≈ 1.0 – 1.3 |
 
-The swell-plus-wind row is a range across runs, not a single number: SWAN
-stops when 99.5 % of points are within 1 % relative change, so two runs of
-the same nonlinear wind case land at slightly different points inside that
-convergence ball (up to 3.6 % apart in Hs here). The linear no-wind cases
-converge tightly and reproduce exactly.
+The first row is the like-for-like test: SWAN carries wind input and nothing
+else, converges in 9 iterations to 100 %, and reproduces byte-identically, so
+that ratio is a real measurement of the source term. waveray sits low because
+its ray fan resolves the arrival cone rather than the full directional spread
+SWAN keeps.
 
-The two rows bracket the physics that is missing. With swell already present
-the operator **over**-predicts, because SWAN's whitecapping dissipates while
-waveray only adds. Generating a sea from calm it **under**-predicts, because
-without quadruplets there is no downshifting to move energy into the peak.
-Both errors grow with fetch — which is the practical answer to "how long a
-fetch can I trust this over?": a few kilometres, on the resolved swell
-frequencies.
+The second row is a range across runs rather than a single number, and is the
+weaker measurement: SWAN stops when 99.5 % of points are within 1 % relative
+change, so two runs land at slightly different points inside that convergence
+ball (up to 3.6 % apart in Hs). Do not run the wind-growth case with full
+physics at all — it stops at the iteration cap having reached only ~92 % of
+the required 99.5 %, and lands in one of two answer families 3.6× apart.
+The no-wind cases converge tightly and reproduce exactly.
+
+Together the rows bracket the practical envelope. Against a balanced model
+the operator **over**-predicts once swell is present, because SWAN's
+whitecapping dissipates while waveray only adds; against an unbalanced one it
+**under**-predicts a sea grown from calm, because without quadruplets no
+energy is moved down into the peak. Both errors grow with fetch — which is
+the practical answer to "how long a fetch can I trust this over?": a few
+kilometres, on the resolved swell frequencies.
+
+A third test, `test_unbalanced_wind_runs_away_in_swan_too`, runs the 15 km
+swell case with SWAN's sinks disabled so both models carry the same physics.
+SWAN reaches 77.8 m and waveray 35.0 m from the same 2 m swell; with the
+default ceiling waveray gives 3.1 m. That is the evidence for `max_growth`:
+the instability is in the source term, not in this implementation of it.
 
 ## References
 

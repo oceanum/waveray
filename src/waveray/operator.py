@@ -270,6 +270,10 @@ def build_operator(
     wind_field = as_wind_field(wind, grid)
     if agrow and wind_field is None:
         raise ValueError("agrow=True requires wind forcing")
+    if max_growth is not None and not max_growth > 1.0:
+        # <= 0 would make log() nan/inf and silently disable the guard or zero
+        # the operator; <= 1 would forbid any growth at all
+        raise ValueError(f"max_growth must be greater than 1, got {max_growth!r}")
     freqs = np.asarray(freqs, dtype=float)
     dirs = np.asarray(dirs, dtype=float)
     boundary_xy = np.atleast_2d(np.asarray(boundary_xy, dtype=float))

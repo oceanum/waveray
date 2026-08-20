@@ -151,9 +151,11 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
   per wind condition if the wind matters and varies. Only the wind *input*
   term is represented; its nonlinear counterweights (whitecapping,
   quadruplets) cannot live in a linear operator, so wind input is **unbounded**
-  and ships with a `max_growth` ceiling that warns when it binds. Measured
-  against SWAN over a 15 km fetch at 12 m/s: ~1.0–1.3× with swell present,
-  0.54–0.70× generating a sea from calm. Good for a few km of nearshore fetch
+  and ships with a `max_growth` ceiling that warns when it binds. This is not
+  a ray-method artefact — SWAN with its sinks disabled grows a 2 m swell to
+  77.8 m over the same 15 km fetch. Measured at 12 m/s: 0.60–0.76× a
+  converged wind-input-only SWAN run growing a sea from calm, ~1.0–1.3× a
+  full-physics run with swell present. Good for a few km of nearshore fetch
   on resolved swell frequencies; not for growing a sea over a fetch.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per

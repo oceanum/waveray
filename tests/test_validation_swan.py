@@ -10,14 +10,22 @@ Design notes
 Both models are given the *same* boundary spectrum and spectral grid, so a
 difference at the target is a difference in the transformation.
 
-For the no-wind cases SWAN is run with quadruplets and whitecapping off, which
-matches what the linear operator contains, and the agreement is tight. The
-wind cases cannot be run that way: SWAN raises an error for a third-generation
-wind without quadruplets and, when forced past it, never converges and returns
-zero. So the wind cases compare against SWAN's *full* physics and quantify the
-cost of carrying the wind input without the nonlinear sinks that balance it —
-the limitation documented in the wind forcing guide. The tolerances below are
-the measured behaviour, not aspirations.
+SWAN is run with quadruplets and whitecapping **off** wherever possible, so it
+contains what the linear operator contains. It raises a level-2 error for a
+third-generation wind without quadruplets — ``SET`` maxerr=2 overrides it —
+but it then runs and converges, so the wind input can be compared like for
+like.
+
+One case deliberately keeps SWAN's full physics: swell plus wind is the
+realistic downscale configuration, and comparing against it bounds what
+omitting the nonlinear sinks costs. Note that reference is the *less*
+trustworthy of the two — SWAN settles at slightly different points inside its
+own convergence criterion run to run (~3.6 % in Hs), so its tolerances are
+deliberately loose. The wind-growth case must never be run with full physics:
+it stops at the iteration cap having reached ~92 % of the required 99.5 % and
+lands in one of two answer families 3.6x apart.
+
+The tolerances below are measured behaviour, not aspirations.
 """
 
 from __future__ import annotations
@@ -137,22 +145,56 @@ def test_wind_on_swell_bounded_departure(tmp_path):
 
 
 def test_wind_growth_from_zero(tmp_path):
-    """Fetch-limited growth from a calm sea, seeded by the AGROW term.
+    """Fetch-limited growth from a calm sea, against wind-input-only SWAN.
 
-    Without quadruplets there is no downshifting, so the input-only operator
-    under-predicts a balanced model over a resolved (<= 0.4 Hz) spectrum. The
-    test pins the direction of the effect and the measured bound.
+    This is the like-for-like test of the source term: SWAN runs with
+    quadruplets and whitecapping off, so both models carry wind input and
+    nothing else. That reference converges (9 iterations, 100 %) and
+    reproduces byte-identically, unlike the full-physics run of the same case.
+    waveray sits a little low — its ray fan resolves the arrival cone rather
+    than the full directional spread SWAN keeps — but tracks the growth.
     """
     case = wind_growth_case(name="windsea")
+    assert not case.swan_full_physics, "the SWAN reference here must be wind-input-only"
     sw, wr = _run_both(case, tmp_path)
-    _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy")
+    _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy (SWAN: wind only)")
 
     assert np.all(np.diff(wr["HSIGN"]) > 0), "waveray must grow with fetch"
     assert np.all(np.diff(sw["HSIGN"]) > 0), "SWAN must grow with fetch"
     ratio = wr["HSIGN"] / sw["HSIGN"]
-    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 0.54-0.70)")
-    assert np.all(ratio > 0.3), "wind-sea generation collapsed"
-    assert np.all(ratio < 1.5), "wind-sea generation ran away"
+    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 0.60-0.76)")
+    assert np.all(ratio > 0.4), "wind-sea generation collapsed"
+    assert np.all(ratio < 1.2), "wind-sea generation ran away"
+
+
+def test_unbalanced_wind_runs_away_in_swan_too(tmp_path):
+    """The runaway belongs to the source term, not to this implementation.
+
+    Run SWAN with wind input and no sinks — the same physics the linear
+    operator carries — over the 15 km swell case, and it grows a 2 m swell to
+    tens of metres, as waveray does with its ceiling removed. This is the
+    measurement behind ``max_growth``.
+    """
+    case = wind_on_swell_case(name="windswell_runaway", swan_full_physics=False)
+    sw = case.run_swan(tmp_path / case.name)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wr_free = case.run_waveray(max_growth=None)
+        wr_capped = case.run_waveray()
+
+    boundary_hs = 2.0
+    print(
+        f"\nwind input with no sinks, from a {boundary_hs} m swell over 15 km:"
+        f"\n  SWAN                    {np.round(sw['HSIGN'], 2)} m"
+        f"\n  waveray max_growth=None {np.round(wr_free['HSIGN'], 2)} m"
+        f"\n  waveray max_growth=100  {np.round(wr_capped['HSIGN'], 2)} m"
+    )
+    # both models must blow far past the swell they were given
+    assert sw["HSIGN"][-1] > 5 * boundary_hs, "SWAN did not run away; case no longer probative"
+    assert wr_free["HSIGN"][-1] > 5 * boundary_hs, "waveray did not run away without its ceiling"
+    # and the ceiling must contain waveray's
+    assert wr_capped["HSIGN"][-1] < 0.25 * wr_free["HSIGN"][-1]
+    assert np.all(np.isfinite(wr_capped["HSIGN"]))
 
 
 def test_growth_clip_reports_when_it_binds(tmp_path):

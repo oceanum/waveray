@@ -39,7 +39,9 @@ import xarray as xr
 
 from .bathymetry import LocalGrid, bilinear
 
-#: rho_air / rho_water used in the Komen growth term (SWAN default, PWIND(9)).
+#: rho_air / rho_water used in the Komen growth term. SWAN's documented
+#: default; a SWAN run started from its own RHOA = 1.28, RHOW = 1025 reports
+#: RHOAW = 0.0012488, 0.1 % lower — far below the drag-law uncertainty.
 RHO_AIR_WATER = 0.00125
 
 # Reference wind speed of the Zijlema et al. (2012) drag fit [m/s].
@@ -153,6 +155,13 @@ class WindField:
 
         u10 = bilinear(u, cx, cy, px, py).reshape(gx.shape)
         v10 = bilinear(v, cx, cy, px, py).reshape(gx.shape)
+        if not (np.isfinite(u10).all() and np.isfinite(v10).all()):
+            # a single NaN would otherwise poison every operator coefficient
+            # without a word (Datamesh wind grids are masked over land)
+            raise ValueError(
+                "wind field has non-finite values over the bathymetry grid; fill or "
+                "mask them before building (e.g. ds.interpolate_na / ds.fillna)"
+            )
 
         speed = np.hypot(u10, v10)
         with np.errstate(invalid="ignore", divide="ignore"):

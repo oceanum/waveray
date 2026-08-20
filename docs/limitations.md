@@ -52,14 +52,17 @@ the *input* term is represented, without the nonlinear sinks that balance it
 in SWAN.
 
 That second caveat is sharper than it sounds. Wind input alone is
-**unbounded**: SWAN itself refuses to run a third-generation wind without
-quadruplets, and when forced past the error it never converges. waveray
-therefore ships a `max_growth` ceiling (default 100× energy per ray path)
-that warns when it binds. Measured against SWAN over a 15 km fetch at
-12 m/s, waveray runs ~1.0–1.3× SWAN with swell present and 0.54–0.70×
-generating a sea from calm. Use wind input for a few kilometres of nearshore
-fetch on resolved swell frequencies; do not use it to grow a sea over a
-fetch. See [Wind forcing](wind.md#the-growth-ceiling-max_growth).
+**unbounded**, and not just here: run SWAN itself with wind input and no
+sinks over a 15 km fetch and it grows a 2 m swell to 77.8 m (waveray reaches
+35.0 m on the same case with its ceiling removed). SWAN guards against this
+by raising a level-2 error for a third-generation wind without quadruplets;
+waveray ships a `max_growth` ceiling (default 100× energy per ray path) that
+warns when it binds. Measured at 12 m/s: 0.60–0.76× a converged
+wind-input-only SWAN run growing a sea from calm, and ~1.0–1.3× a
+full-physics SWAN run with swell present over 15 km. Use wind input for a
+few kilometres of nearshore fetch on resolved swell frequencies; do not use
+it to grow a sea over a fetch. See
+[Wind forcing](wind.md#the-growth-ceiling-max_growth).
 
 ## Fixed water level
 

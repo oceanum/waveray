@@ -3,9 +3,21 @@
 Each :class:`Case` owns one bathymetry, one boundary spectrum and a list of
 target points, and can render itself as a stationary SWAN run *and* as a set
 of waveray site models. Both models are fed the **same** boundary spectrum
-(written to SWAN's ASCII spectral format by wavespectra) and the same
-spectral grid, so a difference in the target spectra is a difference in the
-transformation, not in the forcing.
+(written directly to SWAN's stationary ASCII spectral format) and the same
+frequency range, so most of what is left at the target is the transformation.
+
+Two residual differences are worth knowing before reading a small
+disagreement as physics:
+
+* **Directional bins are staggered half a bin.** SWAN centres its bins at
+  5, 15, ... 355 degrees for ``CIRCLE 36``; this package uses 0, 10, ... 350.
+  Frequencies agree to ~5e-5 Hz.
+* **Boundary coverage differs.** SWAN prescribes energy on the named side
+  only and treats the others as zero-energy; in ``bbox`` mode waveray gives
+  boundary energy to a ray leaving *any* edge. For the shore-normal cases
+  here most of the rays that exit elsewhere sit in the near-zero tail of the
+  spectrum, which is why the plane-beach agreement is still 0.3 %, but the
+  setup is not a perfectly matched boundary condition.
 
 Used by ``tests/test_validation_swan.py`` and by the validation notebooks.
 """
@@ -277,11 +289,20 @@ def wind_growth_case(
     nx: int = 61,
     ny: int = 61,
     u10: float = 12.0,
+    swan_full_physics: bool = False,
 ) -> Case:
     """Flat bottom, zero boundary energy, uniform onshore wind: fetch-limited
-    growth. SWAN must run with its full physics here (it refuses a
-    third-generation wind without quadruplets), so this case quantifies how
-    far the input-only operator departs from a balanced model."""
+    growth.
+
+    SWAN runs with quadruplets and whitecapping **off**, so both models carry
+    wind input and nothing else — the like-for-like test of the source term.
+    SWAN raises a level-2 error for a third-generation wind without
+    quadruplets (``SET`` maxerr=2 overrides it) but then converges in 9
+    iterations to 100 % and reproduces byte-identically, whereas the same case
+    with full physics stops at the 80-iteration cap having reached only ~92 %
+    of the required 99.5 % and lands in one of two answer families 3.6x apart.
+    Never compare against that.
+    """
     x = np.linspace(0.0, length, nx)
     y = np.linspace(-halfwidth, halfwidth, ny)
     depth = np.full((ny, nx), depth_flat)
@@ -295,7 +316,7 @@ def wind_growth_case(
         boundary_xy=np.array([[0.0, -halfwidth * 0.9], [0.0, halfwidth * 0.9]]),
         efth=None,
         wind=(u10, 270.0),
-        swan_full_physics=True,
+        swan_full_physics=swan_full_physics,
     )
 
 
@@ -356,15 +377,22 @@ def real_bathymetry_case(
 def wind_on_swell_case(
     name: str = "windswell",
     u10: float = 12.0,
+    swan_full_physics: bool = True,
     **kwargs,
 ) -> Case:
-    """Plane beach with swell *and* wind: the realistic downscale configuration.
+    """Plane beach with swell *and* wind over a 15 km fetch.
 
-    SWAN runs with full physics (it cannot do otherwise with wind), waveray
-    adds only the input term, so the comparison bounds the error that omission
-    costs over a short nearshore fetch.
+    With ``swan_full_physics=True`` (default) this is the realistic downscale
+    configuration: SWAN dissipates as well as generates, waveray adds only the
+    input term, so the comparison bounds what that omission costs.
+
+    With ``swan_full_physics=False`` both models carry wind input alone, and
+    both run away — SWAN reaches Hs 77.8 m from a 2 m swell here, waveray 35.0 m
+    with the growth ceiling disabled. That is the measurement behind the
+    ``max_growth`` guard: the instability belongs to the unbalanced source
+    term, not to this implementation of it.
     """
     case = plane_beach_case(name=name, **kwargs)
     case.wind = (u10, 270.0)
-    case.swan_full_physics = True
+    case.swan_full_physics = swan_full_physics
     return case

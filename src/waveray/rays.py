@@ -350,6 +350,11 @@ def trace_backward(
                     gen[active] += q * np.exp(-(atten[active] + 0.5 * rate * step)) * step
             atten[active] += rate * step
             if atten_floor is not None:
+                # Running floor, re-applied every step: once a ray is on the
+                # floor, further growth is discarded but so is further friction
+                # (the net rate there is negative). It bounds the gain of the
+                # remaining path, not the total, which is what keeps a clipped
+                # ray finite without pretending to model the missing sinks.
                 hit = atten[active] < atten_floor
                 if hit.any():
                     idx_a = np.flatnonzero(active)

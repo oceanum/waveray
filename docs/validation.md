@@ -102,8 +102,8 @@ contains the same physics the linear operator does.
 | Plane beach, 30° oblique — refracted direction | 246.0→256.6° | 246.7→257.4° | **< 0.8°** |
 | Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
 | Circular island, deep lee | Hs 0.458 m | 0.675 m | ×1.5 |
-| Swell + 12 m/s wind, 15 km fetch | — | — | ×1.0 – 1.3 |
-| Wind sea from calm, `f ≤ 0.4 Hz` | — | — | ×0.54 – 0.70 |
+| Wind sea from calm, `f ≤ 0.4 Hz` (SWAN: wind input only) | — | — | ×0.60 – 0.76 |
+| Swell + 12 m/s wind, 15 km fetch (SWAN: full physics) | — | — | ×1.0 – 1.3 |
 
 Reading the table: on the analytic beach the operator is essentially exact —
 refraction and shoaling are reproduced to a fraction of a percent. On real
@@ -113,9 +113,12 @@ obstacle, where neither model has diffraction and a ray model and a spectral
 model are entitled to disagree; treat sheltered-lee heights as indicative.
 
 The two wind rows bracket the source terms a linear operator cannot carry —
-see [Wind forcing](wind.md#validation). SWAN cannot be run with wind input
-alone (it refuses a third-generation wind without quadruplets), so those
-comparisons are against SWAN's full physics.
+see [Wind forcing](wind.md#validation). SWAN raises a level-2 error for a
+third-generation wind without quadruplets, but overriding it gives a
+converged, byte-reproducible wind-input-only reference, which is what the
+first row compares against. A third test disables SWAN's sinks on the 15 km
+swell case and both models run away — SWAN to 77.8 m, waveray to 35.0 m from
+a 2 m swell — which is the evidence behind waveray's `max_growth` ceiling.
 
 ## Interpreting these numbers
 
