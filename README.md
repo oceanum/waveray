@@ -148,8 +148,11 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
   baked into the operator at build time, like the bathymetry — build operators
   per wind condition if the wind matters and varies. Only the wind *input*
   term is represented; its nonlinear counterweights (whitecapping,
-  quadruplets) cannot live in a linear operator, so wind forcing suits short
-  downscale fetches, not full-fetch wave growth.
+  quadruplets) cannot live in a linear operator, so wind input is **unbounded**
+  and ships with a `max_growth` ceiling that warns when it binds. Measured
+  against SWAN over a 15 km fetch at 12 m/s: 1.03–1.25× with swell present,
+  0.54–0.70× generating a sea from calm. Good for a few km of nearshore fetch
+  on resolved swell frequencies; not for growing a sea over a fetch.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per
   site against observations.
@@ -166,4 +169,12 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
 uv sync                     # or: uv sync --extra datamesh
 uv run pytest               # physics-validation suite
 uv run ruff check . && uv run ruff format --check .
+```
+
+Comparison against a real SWAN run is opt-in — it pulls the official SWAN
+docker image and takes a few minutes:
+
+```bash
+docker pull delftwaves/swan:latest
+uv run pytest -m swan -s    # stationary SWAN 41.51A vs waveray, same boundary spectra
 ```

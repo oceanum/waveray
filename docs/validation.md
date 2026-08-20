@@ -79,6 +79,44 @@ solutions, because linear ray theory has them (`tests/`):
 - **Friction** attenuates on long shallow paths and is negligible in deep water
 - **Integrated parameters** agree with wavespectra to 1e-12
 
+## Against SWAN 41.51A (docker)
+
+The hindcast comparisons above measure waveray against a parent model run by
+someone else, so grid, boundary and settings all differ. `tests/validation/`
+removes those differences: it runs **stationary SWAN 41.51A** in the official
+`delftwaves/swan` image on the same bathymetry, the same spectral grid and the
+*same* boundary spectrum (written directly as a stationary SWAN ASCII spectral
+file), so what is left is the transformation itself.
+
+```bash
+docker pull delftwaves/swan:latest
+uv run pytest -m swan -s          # excluded from the default suite; takes minutes
+```
+
+For the no-wind cases SWAN is run with quadruplets and whitecapping off, so it
+contains the same physics the linear operator does.
+
+| Case | SWAN | waveray | Difference |
+|---|---|---|---|
+| Plane beach, shore-normal swell, 20→6 m | Hs 1.966→2.159 m | 1.960→2.153 m | **0.3 %** |
+| Plane beach, 30° oblique — refracted direction | 246.0→256.6° | 246.7→257.4° | **< 0.8°** |
+| Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
+| Circular island, deep lee | Hs 0.458 m | 0.675 m | ×1.5 |
+| Swell + 12 m/s wind, 15 km fetch | — | — | ×1.03 – 1.25 |
+| Wind sea from calm, `f ≤ 0.4 Hz` | — | — | ×0.54 – 0.70 |
+
+Reading the table: on the analytic beach the operator is essentially exact —
+refraction and shoaling are reproduced to a fraction of a percent. On real
+bathymetry the gap widens shoreward, as the depth field stops being smooth and
+alongshore-uniform. The island lee is the deep shadow behind a blocking
+obstacle, where neither model has diffraction and a ray model and a spectral
+model are entitled to disagree; treat sheltered-lee heights as indicative.
+
+The two wind rows bracket the source terms a linear operator cannot carry —
+see [Wind forcing](wind.md#validation). SWAN cannot be run with wind input
+alone (it refuses a third-generation wind without quadruplets), so those
+comparisons are against SWAN's full physics.
+
 ## Interpreting these numbers
 
 The honest summary: on a smooth coast waveray reproduces its parent SWAN model

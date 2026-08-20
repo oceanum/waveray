@@ -88,6 +88,35 @@ knowing:
   the spectra you transform must be in m² / Hz / deg (the wavespectra
   convention).
 
+### The growth ceiling — `max_growth`
+
+> [!WARNING]
+> Wind input on its own is **unbounded**. In SWAN it is balanced by
+> whitecapping and quadruplet interactions; both are nonlinear in `E` and
+> cannot live in a spectrum-independent linear operator. SWAN will not even
+> run the configuration this package implements: it raises a level-2 error
+> for a third-generation wind without quadruplets, and when forced past it
+> the run never converges and returns zero.
+
+The runaway is worst at high frequency, where `cg` is small so a ray spends
+a long time under the wind: at 0.9 Hz with U10 = 15 m/s, `exp(B·L/cg)` over
+5 km is about `e³⁶`. Left alone that produces nonsense — an early build of
+this feature returned Hs = 7×10²⁴ m at 5 km fetch — and eventually `inf`.
+
+`build_operator(..., max_growth=100.0)` (the default) floors the growth
+exponent so no single ray path can gain more than a hundredfold in energy.
+When it binds you get a warning naming the affected fraction, and the
+operator records it:
+
+```python
+op.attrs["growth_clipped_fraction"]   # 0.0 when the ceiling never bit
+```
+
+A non-zero fraction means the case is outside the regime where input-only
+wind forcing is meaningful. Shorten the domain, drop the high-frequency
+bins, or reduce the wind — do not simply raise the ceiling. Pass
+`max_growth=None` to disable it entirely (expect overflow).
+
 ### Friction velocity — Zijlema et al. (2012)
 
 `u*` is computed from U10 with SWAN's default drag law (since SWAN 41.01):
@@ -165,6 +194,7 @@ op.attrs["wind_source"]   # "none" | "uniform" | "gridded" | "windfield"
 op.attrs["wind_speed"]    # uniform wind only
 op.attrs["wind_dir"]      # uniform wind only
 op.attrs["agrow"]         # 0 | 1
+op.attrs["growth_clipped_fraction"]   # rays that hit the max_growth ceiling
 op.E0                     # (nf, ndir) additive spectrum, or None
 ```
 
@@ -188,13 +218,31 @@ operator keeps its wind physics.
 
 ## Validation
 
-`tests/test_wind.py` pins the implementation to closed forms on flat-bottom
-domains, where straight rays make the path integrals analytic: the operator
-gain equals `exp(B L / cg)` for a following wind, opposing/cross winds leave
-the operator bit-for-bit unchanged, and the `agrow` seed equals
-`q/r (exp(rL) - 1) / (c cg)` with and without friction. A constant gridded
-Dataset reproduces the uniform tuple exactly, and `wind=None` is verified
-identical to the pre-wind operator.
+**Analytic.** `tests/test_wind.py` pins the implementation to closed forms on
+flat-bottom domains, where straight rays make the path integrals analytic:
+the operator gain equals `exp(B L / cg)` for a following wind,
+opposing/cross winds leave the operator bit-for-bit unchanged, and the
+`agrow` seed equals `q/r (exp(rL) - 1) / (c cg)` with and without friction.
+A constant gridded Dataset reproduces the uniform tuple exactly, and
+`wind=None` is verified identical to the pre-wind operator.
+
+**Against SWAN.** `tests/test_validation_swan.py` runs stationary SWAN 41.51A
+in the official `delftwaves/swan` docker image on identical boundary spectra
+(see [Validation](validation.md#against-swan-4151a-docker)). Measured with a
+12 m/s wind:
+
+| Case | waveray / SWAN Hs |
+|---|---|
+| Swell + wind, plane beach, 15 km fetch | 1.03 – 1.25 |
+| Wind sea from calm, `f ≤ 0.4 Hz`, 1–5 km fetch | 0.54 – 0.70 |
+
+The two rows bracket the physics that is missing. With swell already present
+the operator **over**-predicts, because SWAN's whitecapping dissipates while
+waveray only adds. Generating a sea from calm it **under**-predicts, because
+without quadruplets there is no downshifting to move energy into the peak.
+Both errors grow with fetch — which is the practical answer to "how long a
+fetch can I trust this over?": a few kilometres, on the resolved swell
+frequencies.
 
 ## References
 

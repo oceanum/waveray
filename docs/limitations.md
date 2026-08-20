@@ -49,8 +49,17 @@ build argument, but with two caveats that follow from the linear-operator
 design: the wind is stationary — baked into the operator at build time, so
 build one operator per wind condition if it varies and matters — and only
 the *input* term is represented, without the nonlinear sinks that balance it
-in SWAN. Over the short fetches this package targets that imbalance is
-small; over a long fetch it would overgrow the sea.
+in SWAN.
+
+That second caveat is sharper than it sounds. Wind input alone is
+**unbounded**: SWAN itself refuses to run a third-generation wind without
+quadruplets, and when forced past the error it never converges. waveray
+therefore ships a `max_growth` ceiling (default 100× energy per ray path)
+that warns when it binds. Measured against SWAN over a 15 km fetch at
+12 m/s, waveray runs 1.03–1.25× SWAN with swell present and 0.54–0.70×
+generating a sea from calm. Use wind input for a few kilometres of nearshore
+fetch on resolved swell frequencies; do not use it to grow a sea over a
+fetch. See [Wind forcing](wind.md#the-growth-ceiling-max_growth).
 
 ## Fixed water level
 

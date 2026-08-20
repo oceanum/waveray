@@ -35,8 +35,8 @@ SiteModel.build(
 ```
 
 Traces rays once and assembles the transfer operator. `ray_kwargs` are `nsub`,
-`ds`, `max_steps`, `d_min`, `cf_jonswap`, `boundary_mode`, `wind`, `agrow`
-(see [Wind forcing](wind.md) for the last two).
+`ds`, `max_steps`, `d_min`, `cf_jonswap`, `boundary_mode`, `wind`, `agrow`,
+`max_growth` (see [Wind forcing](wind.md) for the wind ones).
 
 ### `SiteModel.transform(...) -> xr.DataArray`
 
@@ -116,6 +116,7 @@ build_operator(
     boundary_mode="bbox",  # "bbox" | "line" | "ring"
     wind=None,             # (speed, dir) | xr.Dataset | WindField; see wind.md
     agrow=False,           # also integrate linear wind growth into E0
+    max_growth=100.0,      # ceiling on wind-input gain per ray path; None disables
 ) -> TransferOperator
 ```
 
@@ -129,7 +130,7 @@ build_operator(
 | `.bp_x`, `.bp_y` | boundary point positions, metres |
 | `.target_x`, `.target_y`, `.depth_target` | target position and depth |
 | `.n_boundary` | `K` |
-| `.attrs` | `nsub`, `ds`, `d_min`, `max_steps`, `cf_jonswap`, `boundary_mode`, `wind_source`, `agrow`, `lost_fraction`, `landed_fraction`, `escaped_fraction` (+ `wind_speed`, `wind_dir` for uniform wind) |
+| `.attrs` | `nsub`, `ds`, `d_min`, `max_steps`, `cf_jonswap`, `boundary_mode`, `wind_source`, `agrow`, `growth_clipped_fraction`, `lost_fraction`, `landed_fraction`, `escaped_fraction` (+ `wind_speed`, `wind_dir` for uniform wind) |
 | `.apply(efth)` | contract with `(..., K, nf, ndir_b)` → `(..., nf, ndir_t)`, then add `E0` if present |
 | `.to_netcdf(path)` / `.from_netcdf(path)` | persistence (includes `E0`) |
 | `.to_dataset()` / `.from_dataset(ds)` | xarray round-trip |
@@ -217,7 +218,8 @@ from waveray.rays import SpeedField, trace_backward, RayFan
 from waveray.rays import STATUS_EXITED, STATUS_LANDED, STATUS_LOST
 
 SpeedField.build(grid, omega, d_min, cf_jonswap=None, wind=None, agrow=False)
-trace_backward(field, x0, y0, theta0, ds, max_steps, d_min=0.3, record_paths=False) -> RayFan
+trace_backward(field, x0, y0, theta0, ds, max_steps, d_min=0.3, record_paths=False,
+               boundary_line=None, max_growth=None) -> RayFan
 ```
 
 `RayFan` carries `status`, `x`, `y`, `theta`, `atten` (net path exponent:
