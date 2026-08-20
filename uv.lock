@@ -3613,6 +3613,7 @@ notebooks = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "oceanum" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -3637,6 +3638,7 @@ provides-extras = ["datamesh", "notebooks"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "oceanum", specifier = ">=1.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.6" },
 ]

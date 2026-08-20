@@ -132,6 +132,7 @@ class RayFan:
     seg: np.ndarray | None = None  # (n,) crossed boundary-line segment, -1 if none
     u: np.ndarray | None = None  # (n,) fractional position along the crossed segment
     gen: np.ndarray | None = None  # (n,) additive wind-generated E*c*cg at the start point
+    growth_clipped: np.ndarray | None = None  # (n,) bool, net wind gain hit max_growth
 
 
 @dataclass
@@ -219,6 +220,7 @@ def trace_backward(
     d_min: float = 0.3,
     record_paths: bool = False,
     boundary_line: BoundaryLine | None = None,
+    max_growth: float | None = None,
 ) -> RayFan:
     """Trace rays backward from (x0, y0) with propagation directions theta0.
 
@@ -235,6 +237,12 @@ def trace_backward(
     With ``record_paths=True`` the full trajectory of every ray is recorded
     and returned in ``RayFan.paths`` (list of (m_i, 2) local-metre arrays,
     ordered from the start point outward).
+
+    ``max_growth`` bounds the net wind-input energy gain of a ray path (the
+    growth exponent is floored at ``-log(max_growth)``). Wind input without
+    the nonlinear sinks that balance it in SWAN is unbounded, so this keeps
+    long high-frequency paths finite; ``RayFan.growth_clipped`` flags the
+    rays where it bit.
     """
     grid = field.grid
     xmin, xmax, ymin, ymax = grid.bounds
@@ -246,6 +254,10 @@ def trace_backward(
     th = theta0.copy()
     atten = np.zeros(n)
     gen = np.zeros(n) if field.lin_a is not None else None
+    atten_floor = (
+        -np.log(max_growth) if (max_growth is not None and field.wind is not None) else None
+    )
+    clipped = np.zeros(n, dtype=bool) if atten_floor is not None else None
     status = np.full(n, STATUS_LOST, dtype=np.int8)
     seg_out = np.full(n, -1, dtype=np.int64)
     u_out = np.zeros(n)
@@ -337,6 +349,12 @@ def trace_backward(
                     q = cm * la * np.maximum(0.0, ux * cw + uy * sw) ** 4
                     gen[active] += q * np.exp(-(atten[active] + 0.5 * rate * step)) * step
             atten[active] += rate * step
+            if atten_floor is not None:
+                hit = atten[active] < atten_floor
+                if hit.any():
+                    idx_a = np.flatnonzero(active)
+                    clipped[idx_a[hit]] = True
+                    atten[idx_a[hit]] = atten_floor
 
         x[active], y[active], th[active] = xn, yn, tn
 
@@ -363,5 +381,14 @@ def trace_backward(
     seg = seg_out if boundary_line is not None else None
     u = u_out if boundary_line is not None else None
     return RayFan(
-        status=status, x=x, y=y, theta=th, atten=atten, paths=paths, seg=seg, u=u, gen=gen
+        status=status,
+        x=x,
+        y=y,
+        theta=th,
+        atten=atten,
+        paths=paths,
+        seg=seg,
+        u=u,
+        gen=gen,
+        growth_clipped=clipped,
     )

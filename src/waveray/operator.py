@@ -208,6 +208,7 @@ def build_operator(
     boundary_mode: str = "bbox",
     wind: WindField | tuple[float, float] | xr.Dataset | None = None,
     agrow: bool = False,
+    max_growth: float | None = 100.0,
 ) -> TransferOperator:
     """Build a transfer operator by backward ray tracing.
 
@@ -253,6 +254,16 @@ def build_operator(
         on the operator; it seeds locally generated wind sea in bins with no
         boundary energy. Requires ``wind``. With ``agrow=True`` the operator
         must be applied to spectra in m^2 / Hz / deg.
+    max_growth : ceiling on the net wind-input energy gain of any single ray
+        path (default 100 = a hundredfold energy gain; ``None`` disables it).
+        Wind input on its own is *unbounded*: SWAN balances it against
+        whitecapping and quadruplets, which are nonlinear in E and cannot
+        live in a linear operator, so a long path at high frequency (where
+        cg is small and the residence time large) would otherwise grow
+        without limit — SWAN itself refuses to run a third-generation wind
+        without quadruplets. Hitting this ceiling means the case is outside
+        the regime where wind input is meaningful here; a warning reports
+        the affected fraction. See the wind forcing guide.
     """
     if boundary_mode not in ("bbox", "line", "ring"):
         raise ValueError(f"boundary_mode must be 'bbox', 'line' or 'ring', got {boundary_mode!r}")
@@ -302,7 +313,7 @@ def build_operator(
     nf, ndt, ndb, kk = freqs.size, dirs.size, dirs.size, boundary_xy.shape[0]
     t_op = np.zeros((nf, ndt, kk, ndb))
     e0 = np.zeros((nf, ndt)) if agrow else None
-    n_rays = n_lost = n_landed = n_exited = n_escaped = 0
+    n_rays = n_lost = n_landed = n_exited = n_escaped = n_clipped = 0
 
     # Sub-ray direction offsets across each target bin (bin-centre sampling).
     offsets = (np.arange(nsub) + 0.5) / nsub - 0.5  # in units of bin width
@@ -319,9 +330,19 @@ def build_operator(
         ccg_t = float(ccg(np.array(omega), np.array(depth_t)))
 
         fan = trace_backward(
-            fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min, boundary_line=line
+            fld,
+            tx,
+            ty,
+            theta0,
+            ds=ds,
+            max_steps=max_steps,
+            d_min=d_min,
+            boundary_line=line,
+            max_growth=max_growth,
         )
 
+        if fan.growth_clipped is not None:
+            n_clipped += int(fan.growth_clipped.sum())
         ok = fan.status == STATUS_EXITED
         n_rays += fan.status.size
         n_lost += int(np.sum(fan.status == STATUS_LOST))
@@ -390,7 +411,18 @@ def build_operator(
             stacklevel=2,
         )
 
-    wind_attrs: dict = {"agrow": int(agrow)}
+    clipped_fraction = n_clipped / max(n_rays, 1)
+    if clipped_fraction > 0.0:
+        warnings.warn(
+            f"wind growth hit the max_growth={max_growth:g} ceiling on "
+            f"{clipped_fraction:.1%} of rays. Wind input alone is unbounded (SWAN balances "
+            "it with whitecapping and quadruplets, which a linear operator cannot carry), "
+            "so these paths are outside the regime where it is meaningful: shorten the "
+            "domain, drop the high-frequency bins, or reduce the wind.",
+            stacklevel=2,
+        )
+
+    wind_attrs: dict = {"agrow": int(agrow), "growth_clipped_fraction": clipped_fraction}
     if wind_field is None:
         wind_attrs["wind_source"] = "none"
     elif isinstance(wind, (tuple, list)):

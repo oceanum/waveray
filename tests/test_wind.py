@@ -236,6 +236,38 @@ def test_agrow_with_friction_matches_closed_form():
     assert np.isclose(e0, e0_expected, rtol=3e-2), (e0, e0_expected)
 
 
+def test_growth_clip_bounds_the_runaway():
+    """High frequency over a long fetch: unbalanced wind input would grow
+    without limit, so max_growth must cap it, warn, and stay finite."""
+    grid = flat_grid(size=20_000.0, n=101)
+    hi_freqs = np.array([0.5, 0.9])
+    with pytest.warns(UserWarning, match="max_growth"):
+        op = build_operator(
+            grid,
+            target_xy=(0.0, 0.0),
+            boundary_xy=np.array([[-10_000.0, 0.0]]),
+            freqs=hi_freqs,
+            dirs=DIRS,
+            nsub=3,
+            cf_jonswap=None,
+            wind=(U10, 270.0),
+            agrow=True,
+            max_growth=100.0,
+        )
+    assert op.attrs["growth_clipped_fraction"] > 0.0
+    assert np.all(np.isfinite(op.T)) and np.all(np.isfinite(op.E0))
+    # ccg ratio is ~1 on flat bathymetry, so the transfer coefficient of a
+    # direction bin cannot exceed the gain ceiling by more than interpolation
+    assert op.T.max() <= 100.0 * 1.05
+
+
+def test_growth_clip_does_not_bind_on_short_paths():
+    """The default ceiling must leave the verified analytic case untouched."""
+    grid = flat_grid()
+    op = build(grid, wind=(U10, 270.0))
+    assert op.attrs["growth_clipped_fraction"] == 0.0
+
+
 def test_agrow_requires_wind():
     with pytest.raises(ValueError, match="agrow"):
         build(flat_grid(n=21), agrow=True)
