@@ -156,7 +156,7 @@ operator at build time. If wind input matters at your site and varies, build
 operators per wind condition. Only SWAN's wind *input* term is represented —
 whitecapping and quadruplets are nonlinear and cannot live in a linear
 operator — so wind forcing suits short downscale fetches, not full-fetch
-wave growth.
+wave growth. Full guide: [Wind forcing](wind.md).
 
 ## Transforming spectra
 
