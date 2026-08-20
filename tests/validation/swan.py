@@ -9,6 +9,7 @@ back with ``wavespectra.read_swan`` (2D spectra) and a small table parser.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -108,10 +109,35 @@ def write_spectrum(
     Path(path).write_text("\n".join(lines) + "\n")
 
 
-def run_swan(workdir: Path, name: str, timeout: int = 600) -> Path:
+def convergence(prt_path: Path) -> tuple[float, float, int, bool]:
+    """(achieved %, required %, iterations, converged?) from a SWAN PRINT file.
+
+    SWAN stops either when the accuracy criterion is met or at the iteration
+    cap. A run that stopped at the cap has *not* solved the equations: its
+    answer depends on where the iteration happened to be, and repeat runs can
+    land in entirely different families. Never use one as a test oracle.
+    """
+    text = Path(prt_path).read_text()
+    acc = re.findall(r"accuracy OK in\s+([\d.]+) %.*?\(\s*([\d.]+) % required\)", text)
+    iters = re.findall(r"iteration\s+(\d+); sweep", text)
+    n_iter = int(iters[-1]) if iters else 0
+    if not acc:
+        return 0.0, 0.0, n_iter, False
+    achieved, required = float(acc[-1][0]), float(acc[-1][1])
+    return achieved, required, n_iter, achieved >= required
+
+
+def run_swan(
+    workdir: Path, name: str, timeout: int = 600, require_convergence: bool = True
+) -> Path:
     """Run ``swanrun -input <name>`` in the SWAN container; return the .prt path.
 
-    Raises RuntimeError with the SWAN error context if the run fails.
+    Raises RuntimeError with the SWAN error context if the run fails, or if it
+    stopped at the iteration cap without meeting its accuracy criterion
+    (``require_convergence``). The latter is not pedantry: a non-converged
+    stationary SWAN run is not reproducible — the same input can land in
+    answer families several-fold apart — so comparing against one produces a
+    test that passes or fails at random.
     """
     workdir = Path(workdir)
     uid, gid = os.getuid(), os.getgid()
@@ -146,6 +172,16 @@ def run_swan(workdir: Path, name: str, timeout: int = 600) -> Path:
         errors.append(f"no PRINT file; stdout tail: {proc.stdout[-2000:]}\n{proc.stderr[-2000:]}")
     if errors:
         raise RuntimeError(f"SWAN run '{name}' failed: " + "\n".join(errors))
+    if require_convergence:
+        achieved, required, n_iter, ok = convergence(prt)
+        if not ok:
+            raise RuntimeError(
+                f"SWAN run '{name}' did NOT converge: reached {achieved:.2f}% of wet grid "
+                f"points within tolerance after {n_iter} iterations, {required:.2f}% required. "
+                "Its answer is not reproducible and must not be used as a reference — raise "
+                "the iteration cap, or fix the case (a wind sea whose peak frequency falls "
+                "outside the spectral grid will not converge)."
+            )
     return prt
 
 

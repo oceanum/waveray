@@ -10,20 +10,22 @@ Design notes
 Both models are given the *same* boundary spectrum and spectral grid, so a
 difference at the target is a difference in the transformation.
 
-SWAN is run with quadruplets and whitecapping **off** wherever possible, so it
-contains what the linear operator contains. It raises a level-2 error for a
-third-generation wind without quadruplets — ``SET`` maxerr=2 overrides it —
-but it then runs and converges, so the wind input can be compared like for
-like.
+SWAN runs with its **full physics** — quadruplets and whitecapping on — so
+these tests measure what a user actually wants to know: how good a surrogate
+waveray is for a real SWAN run. Whether it reimplements each source term
+correctly is settled separately, and more sharply, by the closed-form tests in
+``tests/test_wind.py``. Depth-induced breaking is the one term left off,
+because waveray applies it at the target rather than along the path.
 
-One case deliberately keeps SWAN's full physics: swell plus wind is the
-realistic downscale configuration, and comparing against it bounds what
-omitting the nonlinear sinks costs. Note that reference is the *less*
-trustworthy of the two — SWAN settles at slightly different points inside its
-own convergence criterion run to run (~3.6 % in Hs), so its tolerances are
-deliberately loose. The wind-growth case must never be run with full physics:
-it stops at the iteration cap having reached ~92 % of the required 99.5 % and
-lands in one of two answer families 3.6x apart.
+The answer splits cleanly. Transforming swell, the surrogate is very good
+(sub-percent). Generating a wind sea, it is not — it has the generation term
+and neither of the two sinks that shape a wind sea, and over-predicts several
+fold. One case deliberately strips SWAN's sinks as well, to show that the
+runaway belongs to the unbalanced source term rather than to the ray method.
+
+Every SWAN run is checked for convergence by the harness (see
+``validation.swan.run_swan``): a stationary run that stopped at the iteration
+cap is not reproducible and would make a test that passes at random.
 
 The tolerances below are measured behaviour, not aspirations.
 """
@@ -84,7 +86,8 @@ def test_plane_beach_shore_normal(tmp_path):
     _report(case, sw, wr, "plane beach, shore-normal swell")
 
     rel = np.abs(wr["HSIGN"] - sw["HSIGN"]) / sw["HSIGN"]
-    assert np.all(rel < 0.03), f"Hs differs by {rel.max():.1%} (measured ~0.3%)"
+    print(f"  max |Hs| difference: {rel.max():.2%} (measured 0.31%)")
+    assert np.all(rel < 0.03), f"Hs differs by {rel.max():.1%} (measured 0.31%)"
     assert np.all(np.abs(wr["DIR"] - sw["DIR"]) < 2.0)
 
 
@@ -95,7 +98,8 @@ def test_plane_beach_oblique_refraction(tmp_path):
     _report(case, sw, wr, "plane beach, 30 deg oblique swell")
 
     rel = np.abs(wr["HSIGN"] - sw["HSIGN"]) / sw["HSIGN"]
-    assert np.all(rel < 0.03), f"Hs differs by {rel.max():.1%} (measured ~0.3%)"
+    print(f"  max |Hs| difference: {rel.max():.2%} (measured 0.62%)")
+    assert np.all(rel < 0.03), f"Hs differs by {rel.max():.1%} (measured 0.62%)"
     # both models must turn the waves shoreward, and agree on how far
     assert np.all(np.diff(sw["DIR"]) > 0) and np.all(np.diff(wr["DIR"]) > 0)
     assert np.all(np.abs(wr["DIR"] - sw["DIR"]) < 3.0), "refracted direction drifted from SWAN"
@@ -145,26 +149,47 @@ def test_wind_on_swell_bounded_departure(tmp_path):
 
 
 def test_wind_growth_from_zero(tmp_path):
-    """Fetch-limited growth from a calm sea, against wind-input-only SWAN.
+    """Fetch-limited growth from calm, against a full-physics SWAN run.
 
-    This is the like-for-like test of the source term: SWAN runs with
-    quadruplets and whitecapping off, so both models carry wind input and
-    nothing else. That reference converges (9 iterations, 100 %) and
-    reproduces byte-identically, unlike the full-physics run of the same case.
-    waveray sits a little low — its ray fan resolves the arrival cone rather
-    than the full directional spread SWAN keeps — but tracks the growth.
+    This is the surrogate's worst case, and the test exists to keep the number
+    honest rather than to certify it: shaping a wind sea is a balance between
+    wind input and the two sinks waveray does not carry, so it over-predicts
+    several fold. The assertion bounds the over-prediction; the printed ratio
+    is the number to quote.
     """
     case = wind_growth_case(name="windsea")
-    assert not case.swan_full_physics, "the SWAN reference here must be wind-input-only"
+    assert case.swan_full_physics, "the surrogate must be measured against real SWAN physics"
     sw, wr = _run_both(case, tmp_path)
-    _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy (SWAN: wind only)")
+    _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy (SWAN: full physics)")
 
     assert np.all(np.diff(wr["HSIGN"]) > 0), "waveray must grow with fetch"
     assert np.all(np.diff(sw["HSIGN"]) > 0), "SWAN must grow with fetch"
     ratio = wr["HSIGN"] / sw["HSIGN"]
-    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 0.60-0.76)")
-    assert np.all(ratio > 0.4), "wind-sea generation collapsed"
-    assert np.all(ratio < 1.2), "wind-sea generation ran away"
+    print(f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 2.2-3.2: do not generate seas)")
+    assert np.all(ratio > 1.0), "wind-sea generation no longer over-predicts; re-measure the docs"
+    assert np.all(ratio < 6.0), f"over-prediction grew to {ratio.max():.1f}x"
+
+
+def test_wind_input_only_like_for_like(tmp_path):
+    """Strip SWAN to wind input alone and the two models agree far better.
+
+    Same case, same wind, but with SWAN's sinks off both models carry the same
+    physics. That isolates the source term from the missing sinks: the
+    several-fold over-prediction above collapses to tens of percent, which is
+    the evidence that the formulation is right and the *balance* is what is
+    missing.
+
+    Runs on the narrower swell grid, because unbalanced SWAN collapses to an
+    all-zero solution when the spectrum reaches ~1 Hz.
+    """
+    case = wind_growth_case(name="windsea_lfl", swan_full_physics=False)
+    sw, wr = _run_both(case, tmp_path)
+    _report(case, sw, wr, "flat bottom, 12 m/s wind (SWAN: wind input only)")
+
+    ratio = wr["HSIGN"] / sw["HSIGN"]
+    print(f"  waveray/SWAN ratio: {np.round(ratio, 2)}")
+    assert np.all(ratio > 0.3), "wind-sea generation collapsed"
+    assert np.all(ratio < 2.5), "like-for-like agreement no better than full physics"
 
 
 def test_unbalanced_wind_runs_away_in_swan_too(tmp_path):

@@ -243,30 +243,32 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 
 | Case | SWAN physics | waveray / SWAN Hs |
 |---|---|---|
-| Wind sea from calm, `f ≤ 0.4 Hz`, 1–5 km fetch | wind input only | **0.60 – 0.76** |
-| Swell + wind, plane beach, 15 km fetch | full (quads + whitecapping) | ≈ 1.0 – 1.3 |
+| Swell + wind, plane beach, 15 km fetch | full | 1.04 – 1.30 |
+| **Wind sea from calm**, 1–5 km, peak resolved | full | **2.2 – 3.2** |
+| Wind sea from calm, sinks off (like for like) | wind input only | 0.60 – 0.76 |
 
-The first row is the like-for-like test: SWAN carries wind input and nothing
-else, converges in 9 iterations to 100 %, and reproduces byte-identically, so
-that ratio is a real measurement of the source term. waveray sits low because
-its ray fan resolves the arrival cone rather than the full directional spread
-SWAN keeps.
+The first two rows are the surrogate error against a real SWAN run, which is
+the number to quote. Adding wind on top of swell is a bounded correction;
+**growing a sea from calm is wrong by a factor of two to three**, because the
+shape of a wind sea is set by the balance between input and the sinks, and
+waveray has the input alone.
 
-The second row is a range across runs rather than a single number, and is the
-weaker measurement: SWAN stops when 99.5 % of points are within 1 % relative
-change, so two runs land at slightly different points inside that convergence
-ball (up to 3.6 % apart in Hs). Do not run the wind-growth case with full
-physics at all — it stops at the iteration cap having reached only ~92 % of
-the required 99.5 %, and lands in one of two answer families 3.6× apart.
-The no-wind cases converge tightly and reproduce exactly.
+The third row strips SWAN's sinks so both models carry the same physics. The
+factor of three collapses to tens of percent, which is the evidence that the
+formulation is right and the balance is what is missing. It runs on a
+narrower spectral grid by necessity: let unbalanced growth reach ~1 Hz and
+SWAN collapses to an all-zero solution, the same instability `max_growth`
+guards against, showing up as a numerical failure instead of a runaway.
 
-Together the rows bracket the practical envelope. Against a balanced model
-the operator **over**-predicts once swell is present, because SWAN's
-whitecapping dissipates while waveray only adds; against an unbalanced one it
-**under**-predicts a sea grown from calm, because without quadruplets no
-energy is moved down into the peak. Both errors grow with fetch — which is
-the practical answer to "how long a fetch can I trust this over?": a few
-kilometres, on the resolved swell frequencies.
+Conversely the full-physics rows *need* the peak resolved — on the swell grid
+SWAN never converges, because it is being asked to grow a sea whose peak
+frequency (~0.45 Hz at 12 m/s over 5 km) lies outside its own spectral range.
+The harness rejects both failure modes rather than quietly comparing against
+them.
+
+The errors grow with fetch in every case, which is the practical answer to
+"how long a fetch can I trust this over?": a few kilometres, as a correction
+to swell that is already there.
 
 A third test, `test_unbalanced_wind_runs_away_in_swan_too`, runs the 15 km
 swell case with SWAN's sinks disabled so both models carry the same physics.

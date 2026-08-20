@@ -93,17 +93,20 @@ docker pull delftwaves/swan:latest
 uv run pytest -m swan -s          # excluded from the default suite; takes minutes
 ```
 
-For the no-wind cases SWAN is run with quadruplets and whitecapping off, so it
-contains the same physics the linear operator does.
+SWAN runs with its **full physics** — quadruplets and whitecapping on — because
+the question is how good a surrogate waveray is for a real SWAN run, not
+whether it reimplements a subset of SWAN (the closed-form tests settle that).
+Depth-induced breaking is the one term left off, since waveray applies it at
+the target rather than along the path.
 
 | Case | SWAN | waveray | Difference |
 |---|---|---|---|
-| Plane beach, shore-normal swell, 20→6 m | Hs 1.966→2.159 m | 1.960→2.153 m | **0.3 %** |
-| Plane beach, 30° oblique — refracted direction | 246.0→256.6° | 246.7→257.4° | **< 0.8°** |
+| Plane beach, shore-normal swell, 20→6 m | Hs 1.962→2.147 m | 1.960→2.153 m | **0.31 %** |
+| Plane beach, 30° oblique — refracted direction | 246.0→256.7° | 246.7→257.4° | **< 0.8°** (Hs 0.62 %) |
 | Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
-| Circular island, deep lee | Hs 0.458 m | 0.675 m | ×1.5 |
-| Wind sea from calm, `f ≤ 0.4 Hz` (SWAN: wind input only) | — | — | ×0.60 – 0.76 |
-| Swell + 12 m/s wind, 15 km fetch (SWAN: full physics) | — | — | ×1.0 – 1.3 |
+| Circular island, deep lee | Hs 0.466 m | 0.675 m | ×1.45 |
+| Swell + 12 m/s wind, 15 km fetch | Hs 2.157→2.380 m | 2.243→3.087 m | ×1.04 – 1.30 |
+| **Wind sea from calm**, peak resolved | Hs 0.322→0.644 m | 0.702→2.090 m | **×2.2 – 3.2** |
 
 Reading the table: on the analytic beach the operator is essentially exact —
 refraction and shoaling are reproduced to a fraction of a percent. On real
@@ -112,13 +115,23 @@ alongshore-uniform. The island lee is the deep shadow behind a blocking
 obstacle, where neither model has diffraction and a ray model and a spectral
 model are entitled to disagree; treat sheltered-lee heights as indicative.
 
-The two wind rows bracket the source terms a linear operator cannot carry —
-see [Wind forcing](wind.md#validation). SWAN raises a level-2 error for a
-third-generation wind without quadruplets, but overriding it gives a
-converged, byte-reproducible wind-input-only reference, which is what the
-first row compares against. A third test disables SWAN's sinks on the 15 km
-swell case and both models run away — SWAN to 77.8 m, waveray to 35.0 m from
-a 2 m swell — which is the evidence behind waveray's `max_growth` ceiling.
+The last two rows are the price of the missing source terms, and they say
+something specific: **transform swell with this, do not generate a sea with
+it.** Adding wind to an existing swell over a 15 km fetch costs up to 30 %;
+growing a sea from calm over 1–5 km is wrong by a factor of 2–3, because the
+shape of a wind sea is set by the balance between input and the two sinks
+waveray does not carry.
+
+Two supporting tests make the point sharper. Strip SWAN's sinks so both models
+carry wind input alone and the factor-of-three collapses to tens of percent —
+the formulation is right, the balance is what is missing. Do the same on the
+15 km swell case and *both* models run away, SWAN to 77.8 m and waveray to
+35.0 m from the same 2 m swell, which is the evidence behind waveray's
+`max_growth` ceiling.
+
+Every SWAN run in the suite is checked for convergence, and rejected if it
+stopped at the iteration cap or collapsed to zero — a stationary run that did
+either is not reproducible and cannot serve as a reference.
 
 ## Interpreting these numbers
 

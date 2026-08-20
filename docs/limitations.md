@@ -57,11 +57,10 @@ sinks over a 15 km fetch and it grows a 2 m swell to 77.8 m (waveray reaches
 35.0 m on the same case with its ceiling removed). SWAN guards against this
 by raising a level-2 error for a third-generation wind without quadruplets;
 waveray ships a `max_growth` ceiling (default 100× energy per ray path) that
-warns when it binds. Measured at 12 m/s: 0.60–0.76× a converged
-wind-input-only SWAN run growing a sea from calm, and ~1.0–1.3× a
-full-physics SWAN run with swell present over 15 km. Use wind input for a
-few kilometres of nearshore fetch on resolved swell frequencies; do not use
-it to grow a sea over a fetch. See
+warns when it binds. Measured against full-physics SWAN at 12 m/s:
+1.04–1.30× with swell present over 15 km, and **2.2–3.2× growing a sea from
+calm**. Use wind input as a short-fetch correction to swell that is already
+there; do not use it to generate a sea. See
 [Wind forcing](wind.md#the-growth-ceiling-max_growth).
 
 ## Fixed water level

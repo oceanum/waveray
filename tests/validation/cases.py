@@ -6,6 +6,18 @@ of waveray site models. Both models are fed the **same** boundary spectrum
 (written directly to SWAN's stationary ASCII spectral format) and the same
 frequency range, so most of what is left at the target is the transformation.
 
+SWAN runs with its **full physics** (quadruplets and whitecapping on) by
+default, because the question these cases answer is how good a surrogate
+waveray is for a real SWAN run — not whether it reimplements a subset of
+SWAN correctly, which the analytic tests already establish. Depth-induced
+breaking is the one term left off, because waveray applies it at the target
+as a post-step rather than along the path.
+
+``swan_full_physics=False`` strips SWAN back to what the linear operator
+carries. That is useful for isolating a single term (and one case uses it
+deliberately, to show that unbalanced wind input runs away in SWAN too),
+but it is not the headline comparison.
+
 Two residual differences are worth knowing before reading a small
 disagreement as physics:
 
@@ -36,11 +48,15 @@ from waveray.breaking import hm0, spectral_moment
 
 from .swan import read_table, run_swan, swan_freqs, write_bottom, write_spectrum
 
-# A spectral grid both models share. The upper frequency is deliberately
-# modest: unbalanced wind input runs away at high frequency (see the wind
-# forcing guide), and 0.4 Hz spans the energy-containing range of a swell
-# downscale.
+# Spectral grid for the swell cases: 0.04-0.4 Hz is a representative
+# operational downscale range.
 FREQS = swan_freqs(0.04, 0.4, 24)
+# Wind-sea generation needs its peak resolved. At U10 = 12 m/s over 5 km the
+# JONSWAP fetch-limited peak is ~0.45 Hz, above the swell grid entirely, and
+# SWAN will not converge while growing a sea whose peak it cannot represent
+# (measured: stops at the 80-iteration cap having reached 82-92% of the
+# required 99.5%, in one of two answer families 3.6x apart).
+FREQS_WIND = swan_freqs(0.04, 1.0, 32)
 DIRS = np.arange(0.0, 360.0, 10.0)
 
 
@@ -95,7 +111,7 @@ class Case:
     efth: xr.DataArray | None = None  # boundary spectrum, None = wind sea only
     wind: tuple[float, float] | None = None  # (U10 m/s, coming-from nautical deg)
     boundary_side: str = "W"
-    swan_full_physics: bool = False  # quadruplets + whitecapping on (wind cases)
+    swan_full_physics: bool = True  # quadruplets + whitecapping (SWAN's real physics)
     freqs: np.ndarray = field(default_factory=lambda: FREQS)
     dirs: np.ndarray = field(default_factory=lambda: DIRS)
 
@@ -161,10 +177,21 @@ class Case:
         workdir = Path(workdir)
         self.write(workdir)
         run_swan(workdir, self.name)
-        return read_table(
+        table = read_table(
             workdir / f"{self.name}.tbl",
             ["XP", "YP", "DEP", "HSIGN", "TM01", "DIR", "DSPR"],
         )
+        if not np.any(table["HSIGN"] > 0.0):
+            # An all-zero field satisfies the accuracy criterion trivially, so
+            # the convergence check cannot see it. SWAN collapses to zero when
+            # unbalanced wind growth is allowed to run at high frequency
+            # (sinks off with the spectral grid reaching ~1 Hz).
+            raise RuntimeError(
+                f"SWAN run '{self.name}' returned zero energy at every target. A degenerate "
+                "solution is not a reference. With quadruplets and whitecapping off, keep the "
+                "spectral grid below ~0.5 Hz; SWAN collapses to zero above that."
+            )
+        return table
 
     def run_waveray(self, **build_kwargs) -> dict[str, np.ndarray]:
         """Build one operator per target and transform the boundary spectrum.
@@ -231,7 +258,7 @@ def plane_beach_case(
     hs: float = 2.0,
     tp: float = 10.0,
 ) -> Case:
-    """Alongshore-uniform plane beach: pure refraction + shoaling.
+    """Alongshore-uniform plane beach: refraction + shoaling of swell.
 
     The domain is deliberately much wider than it is long so the arrival cone
     of the target is fully supplied by the offshore boundary and neither model
@@ -289,19 +316,24 @@ def wind_growth_case(
     nx: int = 61,
     ny: int = 61,
     u10: float = 12.0,
-    swan_full_physics: bool = False,
+    swan_full_physics: bool = True,
 ) -> Case:
     """Flat bottom, zero boundary energy, uniform onshore wind: fetch-limited
-    growth.
+    growth against a full-physics SWAN run.
 
-    SWAN runs with quadruplets and whitecapping **off**, so both models carry
-    wind input and nothing else — the like-for-like test of the source term.
-    SWAN raises a level-2 error for a third-generation wind without
-    quadruplets (``SET`` maxerr=2 overrides it) but then converges in 9
-    iterations to 100 % and reproduces byte-identically, whereas the same case
-    with full physics stops at the 80-iteration cap having reached only ~92 %
-    of the required 99.5 % and lands in one of two answer families 3.6x apart.
-    Never compare against that.
+    This is the harshest test of the surrogate — generating a sea is precisely
+    what a linear operator cannot do, since the balance that shapes a wind sea
+    is between wind input and the two sinks waveray does not carry.
+
+    The spectral grid follows the SWAN configuration, because the two modes
+    fail in opposite directions:
+
+    * **Full physics** needs :data:`FREQS_WIND`, so the fetch-limited peak is
+      resolved. On the swell grid SWAN does not converge (see that constant).
+    * **Sinks off** needs the narrower :data:`FREQS`. Let unbalanced growth
+      run up to ~1 Hz and SWAN collapses to an all-zero solution — the same
+      instability waveray's ``max_growth`` guards against, expressed as a
+      numerical failure rather than a runaway.
     """
     x = np.linspace(0.0, length, nx)
     y = np.linspace(-halfwidth, halfwidth, ny)
@@ -317,6 +349,7 @@ def wind_growth_case(
         efth=None,
         wind=(u10, 270.0),
         swan_full_physics=swan_full_physics,
+        freqs=FREQS_WIND if swan_full_physics else FREQS,
     )
 
 
