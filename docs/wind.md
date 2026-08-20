@@ -236,8 +236,14 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 
 | Case | waveray / SWAN Hs |
 |---|---|
-| Swell + wind, plane beach, 15 km fetch | 1.03 – 1.25 |
+| Swell + wind, plane beach, 15 km fetch | ≈ 1.0 – 1.3 |
 | Wind sea from calm, `f ≤ 0.4 Hz`, 1–5 km fetch | 0.54 – 0.70 |
+
+The swell-plus-wind row is a range across runs, not a single number: SWAN
+stops when 99.5 % of points are within 1 % relative change, so two runs of
+the same nonlinear wind case land at slightly different points inside that
+convergence ball (up to 3.6 % apart in Hs here). The linear no-wind cases
+converge tightly and reproduce exactly.
 
 The two rows bracket the physics that is missing. With swell already present
 the operator **over**-predicts, because SWAN's whitecapping dissipates while

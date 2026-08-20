@@ -119,13 +119,15 @@ ray_paths_geojson(bathy_grid, (x[0], y[0]), freqs=[0.06, 0.1],
 
 ## Notebooks
 
-Two executed, illustrated notebooks (plots included in the committed output):
+Executed, illustrated notebooks (plots included in the committed output):
 
 | Notebook | What it shows |
 |---|---|
 | [`notebooks/01_holland_downscaling.ipynb`](notebooks/01_holland_downscaling.ipynb) | End-to-end downscaling of a SWAN 1 km hindcast to a point off **Noordwijk aan Zee** through storms Pia and Henk: bathymetry, ray geometry and the arrival cone, offshore vs nearshore Hs, the directional spectrum before/after, validation against SWAN (r ≈ 0.99), and what depth-limited breaking contributes. |
 | [`notebooks/02_abrolhos_validation.ipynb`](notebooks/02_abrolhos_validation.ipynb) | Held-out validation on a **reef-fronted WA coast**, and an ablation isolating JONSWAP bottom friction (Hm0 bias +1.11 m → +0.18 m when friction is on). |
 | [`notebooks/03_boundary_line_termination.ipynb`](notebooks/03_boundary_line_termination.ipynb) | Terminating rays on the **line/ring through interior output sites** (`boundary_mode="line"/"ring"`) instead of the grid edge — plotted ray geometry and the shoaling-coefficient difference on a synthetic bay (no Datamesh token needed). |
+| [`notebooks/04_swan_validation_idealised.ipynb`](notebooks/04_swan_validation_idealised.ipynb) | **Against stationary SWAN** on idealised bathymetry, both models fed the identical boundary spectrum: plane beach shore-normal (Hs within 0.31%), 30° oblique refraction (direction within 0.91°), and a circular island where the deep lee is where a ray model and a spectral model legitimately part company. |
+| [`notebooks/05_swan_validation_wind.ipynb`](notebooks/05_swan_validation_wind.ipynb) | **Wind input against SWAN**: fetch-limited growth from calm, swell + wind on a plane beach, and the runaway demonstration — unbalanced wind input spans 156 orders of magnitude across the frequency range before the `max_growth` ceiling contains it. |
 
 ```bash
 uv sync --extra datamesh --extra notebooks
@@ -150,7 +152,7 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
   term is represented; its nonlinear counterweights (whitecapping,
   quadruplets) cannot live in a linear operator, so wind input is **unbounded**
   and ships with a `max_growth` ceiling that warns when it binds. Measured
-  against SWAN over a 15 km fetch at 12 m/s: 1.03–1.25× with swell present,
+  against SWAN over a 15 km fetch at 12 m/s: ~1.0–1.3× with swell present,
   0.54–0.70× generating a sea from calm. Good for a few km of nearshore fetch
   on resolved swell frequencies; not for growing a sea over a fetch.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach

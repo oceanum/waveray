@@ -102,7 +102,7 @@ contains the same physics the linear operator does.
 | Plane beach, 30° oblique — refracted direction | 246.0→256.6° | 246.7→257.4° | **< 0.8°** |
 | Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
 | Circular island, deep lee | Hs 0.458 m | 0.675 m | ×1.5 |
-| Swell + 12 m/s wind, 15 km fetch | — | — | ×1.03 – 1.25 |
+| Swell + 12 m/s wind, 15 km fetch | — | — | ×1.0 – 1.3 |
 | Wind sea from calm, `f ≤ 0.4 Hz` | — | — | ×0.54 – 0.70 |
 
 Reading the table: on the analytic beach the operator is essentially exact —

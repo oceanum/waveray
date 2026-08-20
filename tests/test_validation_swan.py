@@ -129,7 +129,9 @@ def test_wind_on_swell_bounded_departure(tmp_path):
 
     assert np.all(wr["HSIGN"] > wr_nowind["HSIGN"]), "wind input must add energy"
     ratio = wr["HSIGN"] / sw["HSIGN"]
-    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 1.03-1.25)")
+    # SWAN stops on a 99.5%-of-points / 1% criterion, so the nonlinear wind
+    # case lands slightly differently run to run: observed 1.03-1.30.
+    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 1.03-1.30 across runs)")
     assert np.all(ratio > 0.9), "waveray fell below SWAN despite the missing sinks"
     assert np.all(ratio < 1.6), f"departure from SWAN grew to {ratio.max():.2f}"
 
