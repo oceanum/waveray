@@ -45,7 +45,10 @@ here; the API uses coming-from nautical degrees for both).
 B = max[0, 0.25 (rho_a / rho_w) (28 u*/c cos(theta - theta_w) - 1)] sigma
 ```
 
-with `rho_a / rho_w = 0.00125` (SWAN's value) and `c` the local phase speed
+with `rho_a / rho_w = 0.00125` (SWAN's documented `PWIND(9)` default; a SWAN
+run started from its own `RHOA = 1.28`, `RHOW = 1025` reports
+`RHOAW = 0.0012488`, 0.1 % lower — far below the uncertainty in the drag
+law) and `c` the local phase speed
 — growth strengthens in shallow water as `c` drops. `B E` is linear in `E`,
 exactly like JONSWAP bottom friction, so it folds into the same per-ray path
 exponent: along a backward ray the invariant `F = E c cg` evolves as
