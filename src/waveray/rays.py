@@ -25,6 +25,7 @@ import numpy as np
 
 from .bathymetry import LocalGrid, bilinear
 from .dispersion import GRAV, group_speed, phase_speed, wavenumber
+from .wind import RHO_AIR_WATER, WindField
 
 STATUS_EXITED = 0  # left the domain through the boundary -> picks up boundary energy
 STATUS_LANDED = 1  # ran aground (depth below threshold) -> blocked, zero energy
@@ -33,18 +34,29 @@ STATUS_LOST = 2  # still inside after max_steps -> treated as blocked
 
 @dataclass
 class SpeedField:
-    """Phase speed, its gradient, and optional friction decay rate for one
-    frequency on a LocalGrid."""
+    """Phase speed, its gradient, and optional friction / wind source rates
+    for one frequency on a LocalGrid."""
 
     grid: LocalGrid
     c: np.ndarray
     dcdx: np.ndarray
     dcdy: np.ndarray
     fric: np.ndarray | None = None  # spatial decay rate [1/m] of E*c*cg
+    wind: WindField | None = None  # u* vector grids (usx, usy)
+    win_a: np.ndarray | None = None  # Komen prefactor 0.25 rho_aw sigma / cg [1/m]
+    win_bx: np.ndarray | None = None  # 28 usx / c (dimensionless)
+    win_by: np.ndarray | None = None  # 28 usy / c
+    lin_a: np.ndarray | None = None  # Cavaleri-MR prefactor incl. H filter and unit conversion
 
     @classmethod
     def build(
-        cls, grid: LocalGrid, omega: float, d_min: float, cf_jonswap: float | None = None
+        cls,
+        grid: LocalGrid,
+        omega: float,
+        d_min: float,
+        cf_jonswap: float | None = None,
+        wind: WindField | None = None,
+        agrow: bool = False,
     ) -> SpeedField:
         # Land / very shallow nodes get the floor depth so that c decreases
         # smoothly toward shore and rays are stopped by the depth check.
@@ -53,6 +65,7 @@ class SpeedField:
         c = phase_speed(omega, depth, k=k)
         dcdy, dcdx = np.gradient(c, grid.y, grid.x)
         fric = None
+        cg = None
         if cf_jonswap is not None:
             # JONSWAP bottom friction S_bf = -C_b sigma^2 / (g^2 sinh^2 kd) E
             # is linear in E, so along a ray the invariant decays as
@@ -60,7 +73,42 @@ class SpeedField:
             cg = group_speed(omega, depth, k=k)
             kd = np.minimum(k * depth, 25.0)
             fric = cf_jonswap * omega**2 / (GRAV**2 * np.sinh(kd) ** 2 * cg)
-        return cls(grid=grid, c=c, dcdx=dcdx, dcdy=dcdy, fric=fric)
+        win_a = win_bx = win_by = lin_a = None
+        if wind is not None:
+            # Komen (1984) exponential growth B = max[0, 0.25 rho_aw
+            # (28 u*/c cos(theta - theta_w) - 1)] sigma is linear in E like
+            # friction, so it enters the same path exponent with opposite
+            # sign. The theta-dependent factor 28 u*/c cos(theta - theta_w)
+            # = win_bx cos(theta) + win_by sin(theta) is assembled per step
+            # from the ray's local direction.
+            if cg is None:
+                cg = group_speed(omega, depth, k=k)
+            win_a = 0.25 * RHO_AIR_WATER * omega / cg
+            win_bx = 28.0 * wind.usx / c
+            win_by = 28.0 * wind.usy / c
+            if agrow:
+                # Cavaleri & Malanotte-Rizzoli (1981) linear growth with
+                # Tolman's low-frequency filter H (SWAN's AGROW). The
+                # (u* max[0, cos(theta - theta_w)])^4 factor is assembled per
+                # step; the prefactor converts SWAN's per-(rad/s)-per-rad
+                # density rate to this package's per-Hz-per-deg convention.
+                us = np.hypot(wind.usx, wind.usy)
+                with np.errstate(divide="ignore", over="ignore"):
+                    sig_pm = 2.0 * np.pi * 0.13 * GRAV / (28.0 * us)
+                    h = np.where(us > 0, np.exp(-((omega / sig_pm) ** -4)), 0.0)
+                lin_a = 1.5e-3 / (2.0 * np.pi * GRAV**2) * h * (2.0 * np.pi * np.pi / 180.0)
+        return cls(
+            grid=grid,
+            c=c,
+            dcdx=dcdx,
+            dcdy=dcdy,
+            fric=fric,
+            wind=wind,
+            win_a=win_a,
+            win_bx=win_bx,
+            win_by=win_by,
+            lin_a=lin_a,
+        )
 
     def sample(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         g = self.grid
@@ -79,10 +127,11 @@ class RayFan:
     x: np.ndarray  # (n,) exit / stop x [m]
     y: np.ndarray  # (n,) exit / stop y [m]
     theta: np.ndarray  # (n,) propagation direction at exit [rad, math convention]
-    atten: np.ndarray  # (n,) path-integrated friction decay exponent (>= 0)
+    atten: np.ndarray  # (n,) net path decay exponent: friction minus wind growth
     paths: list[np.ndarray] | None = None  # per-ray (m_i, 2) local-metre polylines
     seg: np.ndarray | None = None  # (n,) crossed boundary-line segment, -1 if none
     u: np.ndarray | None = None  # (n,) fractional position along the crossed segment
+    gen: np.ndarray | None = None  # (n,) additive wind-generated E*c*cg at the start point
 
 
 @dataclass
@@ -196,6 +245,7 @@ def trace_backward(
     y = np.full(n, float(y0))
     th = theta0.copy()
     atten = np.zeros(n)
+    gen = np.zeros(n) if field.lin_a is not None else None
     status = np.full(n, STATUS_LOST, dtype=np.int8)
     seg_out = np.full(n, -1, dtype=np.int64)
     u_out = np.zeros(n)
@@ -255,13 +305,37 @@ def trace_backward(
         yn = ya + ts * dy_
         tn = tha + ts * dth_
 
-        if field.fric is not None:
-            # accumulate friction decay at the segment midpoint; step length
+        if field.fric is not None or field.wind is not None:
+            # accumulate source rates at the segment midpoint; step length
             # equals ds except for the clipped stop segments
             step = np.full(xa.size, ds)
             if stopped.any():
                 step[stopped] = np.hypot(xn[stopped] - xa[stopped], yn[stopped] - ya[stopped])
-            rate = bilinear(field.fric, grid.x, grid.y, 0.5 * (xa + xn), 0.5 * (ya + yn))
+            xm, ym = 0.5 * (xa + xn), 0.5 * (ya + yn)
+            rate = np.zeros(xa.size)
+            if field.fric is not None:
+                rate += bilinear(field.fric, grid.x, grid.y, xm, ym)
+            if field.wind is not None:
+                # Komen exponential growth: negative contribution to the net
+                # decay exponent. cos(theta - theta_w) is expanded through the
+                # precomputed u*-vector grids using the ray's local direction.
+                thm = 0.5 * (tha + tn)
+                cw, sw = np.cos(thm), np.sin(thm)
+                wbx = bilinear(field.win_bx, grid.x, grid.y, xm, ym)
+                wby = bilinear(field.win_by, grid.x, grid.y, xm, ym)
+                wa = bilinear(field.win_a, grid.x, grid.y, xm, ym)
+                rate -= wa * np.maximum(0.0, wbx * cw + wby * sw - 1.0)
+                if gen is not None:
+                    # Cavaleri-MR linear growth generated at the midpoint,
+                    # propagated to the start point by the net gain already
+                    # accumulated between here and there (backward trace:
+                    # atten holds exactly that path integral).
+                    ux = bilinear(field.wind.usx, grid.x, grid.y, xm, ym)
+                    uy = bilinear(field.wind.usy, grid.x, grid.y, xm, ym)
+                    la = bilinear(field.lin_a, grid.x, grid.y, xm, ym)
+                    cm = bilinear(field.c, grid.x, grid.y, xm, ym)
+                    q = cm * la * np.maximum(0.0, ux * cw + uy * sw) ** 4
+                    gen[active] += q * np.exp(-(atten[active] + 0.5 * rate * step)) * step
             atten[active] += rate * step
 
         x[active], y[active], th[active] = xn, yn, tn
@@ -288,4 +362,6 @@ def trace_backward(
         paths = [traj[: stop_step[i] + 1, i, :] for i in range(n)]
     seg = seg_out if boundary_line is not None else None
     u = u_out if boundary_line is not None else None
-    return RayFan(status=status, x=x, y=y, theta=th, atten=atten, paths=paths, seg=seg, u=u)
+    return RayFan(
+        status=status, x=x, y=y, theta=th, atten=atten, paths=paths, seg=seg, u=u, gen=gen
+    )

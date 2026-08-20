@@ -37,11 +37,20 @@ zone. It is not a surf-zone model. Tune `gamma` per site against observations.
 
 ## Stationary and linear
 
-No temporal nonlinear evolution: no quadruplet or triad interactions, no wind
-input, no whitecapping along the path. Frequencies do not exchange energy — the
+No temporal nonlinear evolution: no quadruplet or triad interactions, no
+whitecapping along the path. Frequencies do not exchange energy — the
 operator is frequency-diagonal. Over a last-mile domain this is a good
 approximation (see [Concepts](concepts.md#why-stationary-is-enough)); over a
 fetch it is not.
+
+Wind input (SWAN's Komen exponential growth, optionally the
+Cavaleri–Malanotte-Rizzoli linear growth) *is* available via the `wind`
+build argument, but with two caveats that follow from the linear-operator
+design: the wind is stationary — baked into the operator at build time, so
+build one operator per wind condition if it varies and matters — and only
+the *input* term is represented, without the nonlinear sinks that balance it
+in SWAN. Over the short fetches this package targets that imbalance is
+small; over a long fetch it would overgrow the sea.
 
 ## Fixed water level
 

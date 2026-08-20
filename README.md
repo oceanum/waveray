@@ -58,6 +58,15 @@ Setup, once per site:
    energy-flux shoaling identically (validated against analytic plane-beach
    solutions in the test suite).
 
+Along each ray path the coefficients also integrate the linear source terms:
+JONSWAP bottom friction (on by default) and, when a wind is supplied, SWAN's
+wind input — the Komen et al. (1984) exponential growth folded into the same
+path exponent, plus (optionally, `agrow=True`) the Cavaleri &
+Malanotte-Rizzoli (1981) linear growth accumulated into an additive spectrum
+that seeds locally generated wind sea. Wind can be a uniform
+`(speed, direction)` or a gridded snapshot, with u* from the Zijlema et
+al. (2012) drag law (SWAN's default).
+
 Runtime, per hindcast:
 
 4. `E_t = einsum(T, E_b)` over all timesteps at once.
@@ -135,6 +144,12 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
 - Bottom friction IS included (JONSWAP, integrated along ray paths) and is ON
   by default with the SWAN swell coefficient `cf_jonswap=0.038`; pass
   `cf_jonswap=None` for pure refraction + shoaling. No triad interactions.
+- Wind input (SWAN formulations) is available but stationary: the wind is
+  baked into the operator at build time, like the bathymetry — build operators
+  per wind condition if the wind matters and varies. Only the wind *input*
+  term is represented; its nonlinear counterweights (whitecapping,
+  quadruplets) cannot live in a linear operator, so wind forcing suits short
+  downscale fetches, not full-fetch wave growth.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per
   site against observations.

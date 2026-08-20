@@ -59,10 +59,13 @@ class SiteModel:
         geographic (DataArray, or LocalGrid with an origin), else (x, y) in
         grid metres. ``ray_kwargs`` pass through to
         :func:`waveray.operator.build_operator` (nsub, ds, max_steps, d_min,
-        cf_jonswap, boundary_mode). Pass ``boundary_mode="line"`` (or
-        ``"ring"``) to terminate rays on the polyline/polygon through
+        cf_jonswap, boundary_mode, wind, agrow). Pass ``boundary_mode="line"``
+        (or ``"ring"``) to terminate rays on the polyline/polygon through
         ``boundary_points`` when they sit inside the bathymetry, instead of the
-        default grid-perimeter termination.
+        default grid-perimeter termination. Pass ``wind=(speed, direction)``
+        (U10 [m/s], coming-from nautical deg) or a gridded snapshot Dataset to
+        add SWAN-formulation wind input along the rays; ``agrow=True`` also
+        seeds linear wind growth (requires spectra in m^2 / Hz / deg).
         """
         grid = (
             bathy

@@ -111,6 +111,7 @@ model = SiteModel.build(
     ds=None,                    # ray step [m]; default min(grid spacing)/3
     d_min=0.3,                  # grounding depth [m]
     cf_jonswap=0.038,           # JONSWAP friction; None disables it
+    wind=None,                  # SWAN wind input; see below
 )
 ```
 
@@ -125,6 +126,37 @@ op.attrs["lost_fraction"]          # rays that never resolved — should be ~0
 
 A non-zero `lost_fraction` means rays are circulating without exiting or
 grounding; raise `max_steps` or check for a pathological bathymetry.
+
+### Wind forcing
+
+Wind input with SWAN's formulations can be integrated along the ray paths.
+Supply either a uniform wind or a gridded snapshot at build time:
+
+```python
+# uniform: U10 [m/s], coming-from nautical degrees (met convention)
+model = SiteModel.build(..., wind=(12.0, 225.0))
+
+# gridded: a Dataset with u10/v10 (or ugrd10m/vgrd10m, uwnd/vwnd, u/v,
+# or wspd/wdir) on 1-D lon/lat or x/y coordinates — one snapshot, no time axis
+model = SiteModel.build(..., wind=wind_ds)
+```
+
+This adds the exponential growth of Komen et al. (1984) —
+`B = max[0, 0.25 (rho_a/rho_w)(28 u*/c cos(theta - theta_w) - 1)] sigma` —
+to the same per-ray path exponent as bottom friction, with u* from U10 via
+the Zijlema et al. (2012) drag law (SWAN's default since 41.01). Pass
+`agrow=True` (SWAN's `AGROW`) to also integrate the linear growth of
+Cavaleri & Malanotte-Rizzoli (1981) into an additive spectrum stored on the
+operator; that term seeds locally generated wind sea in direction bins that
+carry no boundary energy (e.g. a fetch opening away from the boundary), and
+requires the spectra you transform to be in m² / Hz / deg.
+
+Like the bathymetry, the wind is **stationary**: it is baked into the
+operator at build time. If wind input matters at your site and varies, build
+operators per wind condition. Only SWAN's wind *input* term is represented —
+whitecapping and quadruplets are nonlinear and cannot live in a linear
+operator — so wind forcing suits short downscale fetches, not full-fetch
+wave growth.
 
 ## Transforming spectra
 
