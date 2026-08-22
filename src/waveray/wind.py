@@ -68,6 +68,27 @@ def friction_velocity(u10: np.ndarray | float) -> np.ndarray:
     return np.sqrt(drag_coefficient(u)) * u
 
 
+def u10_from_u_star(u_star: float, tol: float = 1e-10) -> float:
+    """Invert ``u* = sqrt(Cd(U10)) U10`` for U10 [m/s].
+
+    The drag law has no closed-form inverse, so this bisects on the monotone
+    branch below the fit's turning point (~68 m/s, far above any usable wind).
+    """
+    target = float(u_star)
+    if target <= 0.0:
+        return 0.0
+    lo, hi = 0.0, 100.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if float(friction_velocity(mid)) < target:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < tol:
+            break
+    return 0.5 * (lo + hi)
+
+
 def _dir_to_theta(dir_nautical_deg: np.ndarray | float) -> np.ndarray:
     """Coming-from nautical degrees -> going-to math radians.
 

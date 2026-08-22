@@ -17,11 +17,12 @@ correctly is settled separately, and more sharply, by the closed-form tests in
 ``tests/test_wind.py``. Depth-induced breaking is the one term left off,
 because waveray applies it at the target rather than along the path.
 
-The answer splits cleanly. Transforming swell, the surrogate is very good
-(sub-percent). Generating a wind sea, it is not — it has the generation term
-and neither of the two sinks that shape a wind sea, and over-predicts several
-fold. One case deliberately strips SWAN's sinks as well, to show that the
-runaway belongs to the unbalanced source term rather than to the ray method.
+Wind input on its own has no sink, so the operator would over-predict several
+fold; the wind-sea saturation cap (``waveray.saturation``) supplies the
+outcome of the balance it cannot model, and the wind tests below assert both
+the capped result and the uncapped one it improves on. One case deliberately
+strips SWAN's sinks *and* the cap, so both models carry wind input alone —
+that isolates the source term from the closure.
 
 Every SWAN run is checked for convergence by the harness (see
 ``validation.swan.run_swan``): a stationary run that stopped at the iteration
@@ -127,8 +128,11 @@ def test_island_sheltering(tmp_path):
 def test_wind_on_swell_bounded_departure(tmp_path):
     """The realistic configuration: swell plus wind over a nearshore fetch.
 
-    waveray carries only the input term, so it must sit above the no-wind
-    solution and above SWAN (which also dissipates), but by a bounded amount.
+    With the saturation cap the operator tracks a full-physics SWAN run to
+    within about 10 %; without it the amplified tail of the boundary spectrum
+    pushes it up to 25 % high at the shallow end. The quoted range spans runs:
+    SWAN settles at slightly different points inside its own convergence
+    criterion, worth a few percent here.
     """
     case = wind_on_swell_case(name="windswell")
     sw, wr = _run_both(case, tmp_path)
@@ -138,36 +142,47 @@ def test_wind_on_swell_bounded_departure(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         wr_nowind = nowind.run_waveray()
+        uncapped = case.run_waveray(transform_kwargs={"saturation": False})["HSIGN"]
 
     assert np.all(wr["HSIGN"] > wr_nowind["HSIGN"]), "wind input must add energy"
     ratio = wr["HSIGN"] / sw["HSIGN"]
-    # SWAN stops on a 99.5%-of-points / 1% criterion, so the nonlinear wind
-    # case lands slightly differently run to run: observed 1.03-1.30.
-    print(f"  waveray/SWAN ratio: {np.round(ratio, 3)} (measured 1.03-1.30 across runs)")
-    assert np.all(ratio > 0.9), "waveray fell below SWAN despite the missing sinks"
-    assert np.all(ratio < 1.6), f"departure from SWAN grew to {ratio.max():.2f}"
+    print(
+        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 0.97-1.09 across runs)"
+        f"\n  without the cap: {np.round(uncapped / sw['HSIGN'], 2)} (measured 1.03-1.25)"
+    )
+    assert np.all(ratio > 0.85), "waveray fell below SWAN"
+    assert np.all(ratio < 1.25), f"departure from SWAN grew to {ratio.max():.2f}"
 
 
 def test_wind_growth_from_zero(tmp_path):
     """Fetch-limited growth from calm, against a full-physics SWAN run.
 
-    This is the surrogate's worst case, and the test exists to keep the number
-    honest rather than to certify it: shaping a wind sea is a balance between
-    wind input and the two sinks waveray does not carry, so it over-predicts
-    several fold. The assertion bounds the over-prediction; the printed ratio
-    is the number to quote.
+    Generating a sea is the hardest thing to ask of a linear operator: its
+    shape is set by a balance between wind input and two sinks the operator
+    does not carry. The wind-sea saturation cap supplies the outcome of that
+    balance, which is what brings this case from a threefold over-prediction
+    to within about ten percent.
     """
     case = wind_growth_case(name="windsea")
     assert case.swan_full_physics, "the surrogate must be measured against real SWAN physics"
     sw, wr = _run_both(case, tmp_path)
     _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy (SWAN: full physics)")
 
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        uncapped = case.run_waveray(transform_kwargs={"saturation": False})["HSIGN"]
+
     assert np.all(np.diff(wr["HSIGN"]) > 0), "waveray must grow with fetch"
     assert np.all(np.diff(sw["HSIGN"]) > 0), "SWAN must grow with fetch"
     ratio = wr["HSIGN"] / sw["HSIGN"]
-    print(f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 2.2-3.2: do not generate seas)")
-    assert np.all(ratio > 1.0), "wind-sea generation no longer over-predicts; re-measure the docs"
-    assert np.all(ratio < 6.0), f"over-prediction grew to {ratio.max():.1f}x"
+    print(
+        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 0.92-0.95)"
+        f"\n  without the saturation cap: {np.round(uncapped / sw['HSIGN'], 2)} (measured 2.2-3.2)"
+    )
+    assert np.all(ratio > 0.7), "wind-sea generation collapsed"
+    assert np.all(ratio < 1.3), "wind-sea generation ran away"
+    # the cap must be what closed the gap, not a coincidence
+    assert np.all(uncapped > 1.8 * sw["HSIGN"]), "uncapped run no longer over-predicts"
 
 
 def test_wind_input_only_like_for_like(tmp_path):
@@ -183,7 +198,9 @@ def test_wind_input_only_like_for_like(tmp_path):
     all-zero solution when the spectrum reaches ~1 Hz.
     """
     case = wind_growth_case(name="windsea_lfl", swan_full_physics=False)
-    sw, wr = _run_both(case, tmp_path)
+    # both models carry wind input alone here, so the cap (which stands in
+    # for the sinks SWAN also has switched off) must be out of the way
+    sw, wr = _run_both(case, tmp_path, transform_kwargs={"saturation": False})
     _report(case, sw, wr, "flat bottom, 12 m/s wind (SWAN: wind input only)")
 
     ratio = wr["HSIGN"] / sw["HSIGN"]
@@ -197,15 +214,21 @@ def test_unbalanced_wind_runs_away_in_swan_too(tmp_path):
 
     Run SWAN with wind input and no sinks — the same physics the linear
     operator carries — over the 15 km swell case, and it grows a 2 m swell to
-    tens of metres, as waveray does with its ceiling removed. This is the
-    measurement behind ``max_growth``.
+    tens of metres, as waveray does with both of its guards removed. This is
+    the measurement behind ``max_growth`` and behind the saturation cap: the
+    instability belongs to the unbalanced source term, not to either model's
+    numerics.
     """
     case = wind_on_swell_case(name="windswell_runaway", swan_full_physics=False)
     sw = case.run_swan(tmp_path / case.name)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        wr_free = case.run_waveray(max_growth=None)
-        wr_capped = case.run_waveray()
+        # the point of this case is the RAW source term, so both guards are
+        # off: no growth ceiling during the build, no saturation cap at the
+        # target. SWAN has its sinks off for the same reason.
+        no_sat = {"saturation": False}
+        wr_free = case.run_waveray(max_growth=None, transform_kwargs=no_sat)
+        wr_capped = case.run_waveray(transform_kwargs=no_sat)
 
     boundary_hs = 2.0
     print(

@@ -153,10 +153,11 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
   quadruplets) cannot live in a linear operator, so wind input is **unbounded**
   and ships with a `max_growth` ceiling that warns when it binds. This is not
   a ray-method artefact — SWAN with its sinks disabled grows a 2 m swell to
-  77.8 m over the same 15 km fetch. Measured against full-physics SWAN at
-  12 m/s: 1.04–1.30× with swell present over 15 km, but **2.2–3.2× growing a
-  sea from calm**. Use it as a short-fetch correction to existing swell, not
-  to generate a sea.
+  77.8 m over the same 15 km fetch. waveray closes that with a **wind-sea
+  saturation cap** — an empirical closure, not a SWAN source term — which
+  brings the measured error against full-physics SWAN at 12 m/s to 0.97–1.09×
+  with swell present and 0.92–0.95× growing a sea from calm (2.2–3.2× without
+  it), while never engaging on a swell-only spectrum.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per
   site against observations.

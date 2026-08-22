@@ -28,6 +28,7 @@ import xarray as xr
 from .bathymetry import LocalGrid
 from .breaking import apply_breaking
 from .operator import TransferOperator, build_operator
+from .saturation import SATURATION_K, apply_saturation
 from .spectra import set_wavespectra_attrs
 
 
@@ -38,6 +39,7 @@ class SiteModel:
     operator: TransferOperator
     gamma: float = 0.73
     breaking_method: str = "miche"
+    saturation_k: float = SATURATION_K
 
     # ------------------------------------------------------------------ #
     @classmethod
@@ -103,6 +105,7 @@ class SiteModel:
         site_dim: str = "site",
         tide: xr.DataArray | np.ndarray | float | None = None,
         breaking: bool = True,
+        saturation: bool = True,
     ) -> xr.DataArray:
         """Transform boundary spectra to the target point.
 
@@ -167,6 +170,21 @@ class SiteModel:
         lead_dims = ordered.dims[:-3]
         out = op.apply(ordered.values)
 
+        sat_scale = None
+        if saturation and "u10_target" in op.attrs:
+            # Wind input has no sink in the operator, so the transformed
+            # spectrum is capped at the wind-sea saturation level before the
+            # depth-limited cap. Inert on a spectrum with no wind sea.
+            out, sat_scale = apply_saturation(
+                out,
+                op.freq,
+                op.dir_t,
+                u10=float(op.attrs["u10_target"]),
+                u_star=float(op.attrs["u_star_target"]),
+                fetch=float(op.attrs["wind_fetch"]),
+                k=self.saturation_k,
+            )
+
         scale = None
         if breaking:
             tide_arr: np.ndarray | float
@@ -204,6 +222,8 @@ class SiteModel:
         )
         if scale is not None:
             result.attrs["breaking_scale_min"] = float(np.min(scale))
+        if sat_scale is not None:
+            result.attrs["wind_saturation_scale_min"] = float(np.min(sat_scale))
         return set_wavespectra_attrs(result)
 
     # ------------------------------------------------------------------ #

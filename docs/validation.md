@@ -105,8 +105,8 @@ the target rather than along the path.
 | Plane beach, 30° oblique — refracted direction | 246.0→256.7° | 246.7→257.4° | **< 0.8°** (Hs 0.62 %) |
 | Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
 | Circular island, deep lee | Hs 0.466 m | 0.675 m | ×1.45 |
-| Swell + 12 m/s wind, 15 km fetch | Hs 2.157→2.380 m | 2.243→3.087 m | ×1.04 – 1.30 |
-| **Wind sea from calm**, peak resolved | Hs 0.322→0.644 m | 0.702→2.090 m | **×2.2 – 3.2** |
+| Swell + 12 m/s wind, 15 km fetch | Hs 2.176→2.470 m | 2.116→2.603 m | ×0.97 – 1.09 |
+| Wind sea from calm, peak resolved | Hs 0.322→0.644 m | 0.304→0.591 m | ×0.92 – 0.95 |
 
 Reading the table: on the analytic beach the operator is essentially exact —
 refraction and shoaling are reproduced to a fraction of a percent. On real
@@ -115,16 +115,18 @@ alongshore-uniform. The island lee is the deep shadow behind a blocking
 obstacle, where neither model has diffraction and a ray model and a spectral
 model are entitled to disagree; treat sheltered-lee heights as indicative.
 
-The last two rows are the price of the missing source terms, and they say
-something specific: **transform swell with this, do not generate a sea with
-it.** Adding wind to an existing swell over a 15 km fetch costs up to 30 %;
-growing a sea from calm over 1–5 km is wrong by a factor of 2–3, because the
-shape of a wind sea is set by the balance between input and the two sinks
-waveray does not carry.
+The two wind rows are within a few percent, but only because of the
+[wind-sea saturation cap](wind.md#wind-sea-saturation-the-closure). Without
+it the same cases run 1.03–1.25× and 2.18–3.25×: wind input is a source with
+no sink, and the operator amplifies the boundary spectrum's tail without
+limit. The cap supplies the outcome of the balance it cannot model, and never
+engages on a swell-only spectrum — which is why the propagation rows above are
+unaffected by it. It is an empirical closure calibrated against these SWAN
+runs, not one of SWAN's source terms.
 
-Two supporting tests make the point sharper. Strip SWAN's sinks so both models
-carry wind input alone and the factor-of-three collapses to tens of percent —
-the formulation is right, the balance is what is missing. Do the same on the
+Two supporting tests make the point sharper. Strip SWAN's sinks *and* the cap,
+so both models carry wind input alone, and the agreement is tens of percent —
+the formulation is right, the balance is what was missing. Do the same on the
 15 km swell case and *both* models run away, SWAN to 77.8 m and waveray to
 35.0 m from the same 2 m swell, which is the evidence behind waveray's
 `max_growth` ceiling.

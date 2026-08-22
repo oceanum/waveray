@@ -126,6 +126,61 @@ wind forcing is meaningful. Shorten the domain, drop the high-frequency
 bins, or reduce the wind — do not simply raise the ceiling. Pass
 `max_growth=None` to disable it entirely (expect overflow).
 
+### Wind-sea saturation — the closure
+
+Wind input is a source with no sink. The operator carries the Komen growth
+but not the whitecapping and quadruplet interactions that balance it, so the
+transformed spectrum grows without limit — and the damage is not where you
+might expect. Decomposing the error on a 15 km fetch at 12 m/s:
+
+| Contribution | energy added (Hs²) | SWAN |
+|---|---|---|
+| Amplification of the boundary spectrum, `T·E_b` | 1.12 / 3.01 / 4.29 | 0.81 / 1.00 / 1.03 |
+| Locally seeded sea, `E0` | 0.07 / 0.34 / 0.60 | — |
+
+Almost all of it is the **boundary spectrum's tail being amplified**: at
+0.4 Hz over 15 km the gain `exp(B L / cg)` reaches ~10⁶, because `cg` is small
+there and the ray spends a correspondingly long time under the wind. SWAN's
+whitecapping saturates that tail immediately.
+
+Rather than model the missing sinks — whitecapping's coefficient depends on
+the integral steepness of the whole spectrum, so it cannot live in a
+spectrum-independent operator — waveray imposes their **outcome**. A wind sea
+cannot exceed
+
+```text
+cap(f) = max[ E_PM(f, u*),  k · E_JONSWAP(f, U10, X) ],   k = 3
+```
+
+the fully developed spectrum for its own wind (which bounds the tail and sits
+above any swell peak, so swell is never touched) or a multiple of the
+fetch-limited spectrum for the fetch actually available (which permits the
+peak overshoot of a young sea — a plain PM cap clips it and costs a factor of
+two). The cap is applied to the directionally-integrated `E(f)` at the target,
+scaling each frequency's directional distribution proportionally, in the same
+post-step slot as depth-limited breaking.
+
+The fetch `X` is measured from the bathymetry: `upwind_fetch()` marches from
+the target into the wind until it reaches land or the domain edge. It, the
+local `u*` and `U10` are computed at build time and stored on the operator.
+
+> [!NOTE]
+> `k = 3` was calibrated against full-physics SWAN and is the value that
+> minimises worst-case error across both wind regimes (k=1 → 40 %, k=3 →
+> 11 %, k=5 → 17 %). This is an empirical closure, **not** one of SWAN's
+> source terms — the rest of the wind formulation is SWAN's, this part is
+> waveray's own.
+
+It is on by default whenever the operator carries wind, and reports itself:
+
+```python
+efth_near = model.transform(efth, saturation=True)   # default
+efth_near.attrs["wind_saturation_scale_min"]         # smallest factor applied
+model.saturation_k = 3.0                             # tune per site
+```
+
+Pass `saturation=False` for the raw, unbalanced source term.
+
 ### Friction velocity — Zijlema et al. (2012)
 
 `u*` is computed from U10 with SWAN's default drag law (since SWAN 41.01):
@@ -241,21 +296,20 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 (see [Validation](validation.md#against-swan-4151a-docker)). Measured with a
 12 m/s wind:
 
-| Case | SWAN physics | waveray / SWAN Hs |
-|---|---|---|
-| Swell + wind, plane beach, 15 km fetch | full | 1.04 – 1.30 |
-| **Wind sea from calm**, 1–5 km, peak resolved | full | **2.2 – 3.2** |
-| Wind sea from calm, sinks off (like for like) | wind input only | 0.60 – 0.76 |
+| Case | SWAN physics | with the cap | without it |
+|---|---|---|---|
+| Swell only (no wind) | full | 0.999 – 1.003 | 0.999 – 1.003 |
+| Swell + wind, plane beach, 15 km | full | **0.97 – 1.09** | 1.03 – 1.25 |
+| Wind sea from calm, 1–5 km | full | **0.92 – 0.95** | 2.18 – 3.25 |
+| Wind sea from calm, sinks off | wind input only | *(cap off by design)* | 0.60 – 0.76 |
 
-The first two rows are the surrogate error against a real SWAN run, which is
-the number to quote. Adding wind on top of swell is a bounded correction;
-**growing a sea from calm is wrong by a factor of two to three**, because the
-shape of a wind sea is set by the balance between input and the sinks, and
-waveray has the input alone.
+With the saturation cap the surrogate is within about 10 % of a real SWAN run
+with swell and wind, and within 8 % generating a sea from calm — the case that
+was a threefold over-prediction without it. The cap never engages on a
+swell-only spectrum, so the sub-percent propagation results are unaffected.
 
-The third row strips SWAN's sinks so both models carry the same physics. The
-factor of three collapses to tens of percent, which is the evidence that the
-formulation is right and the balance is what is missing. It runs on a
+The last row strips SWAN's sinks *and* the cap, so both models carry wind
+input alone; it isolates the source term from the closure. It runs on a
 narrower spectral grid by necessity: let unbalanced growth reach ~1 Hz and
 SWAN collapses to an all-zero solution, the same instability `max_growth`
 guards against, showing up as a numerical failure instead of a runaway.
@@ -266,9 +320,10 @@ frequency (~0.45 Hz at 12 m/s over 5 km) lies outside its own spectral range.
 The harness rejects both failure modes rather than quietly comparing against
 them.
 
-The errors grow with fetch in every case, which is the practical answer to
-"how long a fetch can I trust this over?": a few kilometres, as a correction
-to swell that is already there.
+The remaining error still grows with fetch, so the honest envelope is a
+nearshore domain — a few kilometres to a few tens of kilometres — rather than
+an open-ocean fetch. Within that, wind input is now a genuinely useful
+correction rather than a hazard.
 
 A third test, `test_unbalanced_wind_runs_away_in_swan_too`, runs the 15 km
 swell case with SWAN's sinks disabled so both models carry the same physics.
@@ -284,6 +339,11 @@ the instability is in the source term, not in this implementation of it.
   fully developed wind-sea spectrum. *J. Phys. Oceanogr.* 14, 1271–1285.
 - Tolman, H.L. (1992). Effects of numerics on the physics in a
   third-generation wind-wave model. *J. Phys. Oceanogr.* 22, 1095–1111.
+- Hasselmann, K. et al. (1973). Measurements of wind-wave growth and swell
+  decay during the Joint North Sea Wave Project (JONSWAP). *Dtsch. Hydrogr.
+  Z.* Suppl. A 8(12).
+- Pierson, W.J. and L. Moskowitz (1964). A proposed spectral form for fully
+  developed wind seas. *J. Geophys. Res.* 69, 5181–5190.
 - Zijlema, M., G.Ph. van Vledder and L.H. Holthuijsen (2012). Bottom
   friction and wind drag for wave models. *Coastal Engineering* 65, 19–26.
 - [SWAN scientific and technical documentation](https://swanmodel.sourceforge.io/online_doc/swantech/swantech.html),

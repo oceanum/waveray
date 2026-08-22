@@ -193,7 +193,9 @@ class Case:
             )
         return table
 
-    def run_waveray(self, **build_kwargs) -> dict[str, np.ndarray]:
+    def run_waveray(
+        self, transform_kwargs: dict | None = None, **build_kwargs
+    ) -> dict[str, np.ndarray]:
         """Build one operator per target and transform the boundary spectrum.
 
         Returns Hs / Tm01 / Dir arrays in the same order as ``targets``,
@@ -226,7 +228,7 @@ class Case:
                 dirs=self.dirs,
                 **kwargs,
             )
-            out = model.transform(e_b, breaking=False).values
+            out = model.transform(e_b, breaking=False, **(transform_kwargs or {})).values
             m0 = spectral_moment(out[None], self.freqs, self.dirs, n=0)[0]
             m1 = spectral_moment(out[None], self.freqs, self.dirs, n=1)[0]
             hs.append(4.0 * np.sqrt(max(m0, 0.0)))

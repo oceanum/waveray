@@ -29,7 +29,7 @@ import numpy as np
 import xarray as xr
 
 from ._version import __version__ as _pkg_version
-from .bathymetry import LocalGrid
+from .bathymetry import LocalGrid, bilinear
 from .dispersion import ccg
 from .rays import (
     STATUS_EXITED,
@@ -39,7 +39,8 @@ from .rays import (
     SpeedField,
     trace_backward,
 )
-from .wind import WindField, as_wind_field
+from .saturation import upwind_fetch
+from .wind import WindField, as_wind_field, u10_from_u_star
 
 
 def dir_to_theta(dir_nautical_deg: np.ndarray) -> np.ndarray:
@@ -437,6 +438,20 @@ def build_operator(
         wind_attrs["wind_source"] = "windfield"
     else:
         wind_attrs["wind_source"] = "gridded"
+
+    if wind_field is not None:
+        # Wind speed and over-water fetch at the target, for the saturation
+        # cap applied in SiteModel.transform. Both are fixed by the stationary
+        # wind and the bathymetry, so they belong on the operator.
+        usx = float(bilinear(wind_field.usx, grid.x, grid.y, np.array([tx]), np.array([ty]))[0])
+        usy = float(bilinear(wind_field.usy, grid.x, grid.y, np.array([tx]), np.array([ty]))[0])
+        u_star = float(np.hypot(usx, usy))
+        wind_attrs["u_star_target"] = u_star
+        wind_attrs["u10_target"] = float(u10_from_u_star(u_star))
+        wind_attrs["wind_dir_target"] = float(theta_to_dir(np.arctan2(usy, usx)))
+        wind_attrs["wind_fetch"] = float(
+            upwind_fetch(grid, tx, ty, wind_attrs["wind_dir_target"], d_min=d_min)
+        )
 
     return TransferOperator(
         T=t_op,
