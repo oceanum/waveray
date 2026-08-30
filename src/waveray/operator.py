@@ -114,6 +114,7 @@ class TransferOperator:
     depth_target: float
     attrs: dict = field(default_factory=dict)
     E0: np.ndarray | None = None  # (nf, ndir_t) additive wind-generated density
+    T_nowind: np.ndarray | None = None  # same rays with the wind term omitted
 
     @property
     def n_boundary(self) -> int:
@@ -139,6 +140,18 @@ class TransferOperator:
             out = out + self.E0
         return out
 
+    def apply_nowind(self, efth_boundary: np.ndarray) -> np.ndarray:
+        """Transfer with the wind term omitted, for isolating its increment.
+
+        Only available on an operator built with wind; the rays are the same,
+        so this differs from :meth:`apply` purely by the wind contribution to
+        the path exponent (and by the ``E0`` seed, which is entirely wind).
+        """
+        if self.T_nowind is None:
+            raise ValueError("operator was not built with wind; no no-wind transfer stored")
+        e = np.asarray(efth_boundary, dtype=float)
+        return np.einsum("fjkl,...kfl->...fj", self.T_nowind, e)
+
     # ------------------------------------------------------------------ #
     def to_dataset(self) -> xr.Dataset:
         data_vars = {
@@ -148,6 +161,8 @@ class TransferOperator:
         }
         if self.E0 is not None:
             data_vars["E0"] = (("freq", "dir"), self.E0)
+        if self.T_nowind is not None:
+            data_vars["T_nowind"] = (("freq", "dir", "bp", "dir_b"), self.T_nowind)
         ds = xr.Dataset(
             data_vars,
             coords={
@@ -187,6 +202,7 @@ class TransferOperator:
             depth_target=depth_target,
             attrs=attrs,
             E0=ds["E0"].values if "E0" in ds else None,
+            T_nowind=ds["T_nowind"].values if "T_nowind" in ds else None,
         )
 
     @classmethod
@@ -210,6 +226,7 @@ def build_operator(
     wind: WindField | tuple[float, float] | xr.Dataset | None = None,
     agrow: bool = False,
     max_growth: float | None = 100.0,
+    fetch: float | None = None,
 ) -> TransferOperator:
     """Build a transfer operator by backward ray tracing.
 
@@ -255,6 +272,11 @@ def build_operator(
         on the operator; it seeds locally generated wind sea in bins with no
         boundary energy. Requires ``wind``. With ``agrow=True`` the operator
         must be applied to spectra in m^2 / Hz / deg.
+    fetch : over-water fetch [m] for the wind-sea saturation closure. Default
+        None measures it from the bathymetry, marching upwind from the target
+        until land or the domain edge — which understates the fetch when the
+        domain is smaller than the sea that reaches it. Give it explicitly
+        when you know the real fetch.
     max_growth : ceiling on the net wind-input energy gain of any single ray
         path (default 100 = a hundredfold energy gain; ``None`` disables it).
         Wind input on its own is *unbounded*: SWAN balances it against
@@ -317,6 +339,7 @@ def build_operator(
 
     nf, ndt, ndb, kk = freqs.size, dirs.size, dirs.size, boundary_xy.shape[0]
     t_op = np.zeros((nf, ndt, kk, ndb))
+    t_nw = np.zeros((nf, ndt, kk, ndb)) if wind_field is not None else None
     e0 = np.zeros((nf, ndt)) if agrow else None
     n_rays = n_lost = n_landed = n_exited = n_escaped = n_clipped = 0
 
@@ -367,7 +390,9 @@ def build_operator(
         # direction-bin interpolation below it yields the energy-flux
         # directional transform (the interpolation column-sum supplies the
         # dtheta_t/dtheta_b Jacobian). Do not "fix" this to a flux ratio.
-        coef = ccg(omega, depth_exit) / ccg_t / nsub * np.exp(-fan.atten[ok])
+        base = ccg(omega, depth_exit) / ccg_t / nsub
+        coef = base * np.exp(-fan.atten[ok])
+        coef_nw = base * np.exp(-fan.atten_nowind[ok]) if t_nw is not None else None
 
         # boundary-point (alongshore) weights: from the bbox-perimeter position
         # in bbox mode, or from the crossed line segment in line/ring mode.
@@ -406,6 +431,8 @@ def build_operator(
         for kb, wb in ((klo, wlo), (khi, whi)):
             for lb, wd in ((llo, vlo), (lhi, vhi)):
                 np.add.at(t_op[i], (jbin, kb, lb), coef * wb * wd)
+                if t_nw is not None:
+                    np.add.at(t_nw[i], (jbin, kb, lb), coef_nw * wb * wd)
 
     escaped_fraction = n_escaped / max(n_exited, 1)
     if line is not None and escaped_fraction > 0.01:
@@ -449,9 +476,14 @@ def build_operator(
         wind_attrs["u_star_target"] = u_star
         wind_attrs["u10_target"] = float(u10_from_u_star(u_star))
         wind_attrs["wind_dir_target"] = float(theta_to_dir(np.arctan2(usy, usx)))
+        # An explicit fetch overrides the geometric one, which is bounded by
+        # the domain and so understates a target open to a long sea.
         wind_attrs["wind_fetch"] = float(
-            upwind_fetch(grid, tx, ty, wind_attrs["wind_dir_target"], d_min=d_min)
+            fetch
+            if fetch is not None
+            else upwind_fetch(grid, tx, ty, wind_attrs["wind_dir_target"], d_min=d_min)
         )
+        wind_attrs["fetch_source"] = "given" if fetch is not None else "geometric"
 
     return TransferOperator(
         T=t_op,
@@ -477,4 +509,5 @@ def build_operator(
             "escaped_fraction": escaped_fraction,
         },
         E0=e0,
+        T_nowind=t_nw,
     )

@@ -68,16 +68,37 @@ def friction_velocity(u10: np.ndarray | float) -> np.ndarray:
     return np.sqrt(drag_coefficient(u)) * u
 
 
+#: U10 at which the Zijlema drag fit turns over; u* is non-monotone above it.
+#: The positive root of d(u*)/dU10 = 0, i.e. 5.96 t^2 - 8.91 t - 1.10 = 0 with
+#: t = U10 / U_ref, giving t = 1.6096285... times the 31.5 m/s reference.
+U10_TURNING_POINT = 50.703297
+#: The largest u* the drag law can produce. Derived from the turning point
+#: rather than quoted separately: an independently rounded pair leaves a band
+#: of u* that is below the stated maximum yet unreachable by the bisection,
+#: which would silently return the bracket end again.
+U_STAR_MAX = float(friction_velocity(U10_TURNING_POINT))
+
+
 def u10_from_u_star(u_star: float, tol: float = 1e-10) -> float:
     """Invert ``u* = sqrt(Cd(U10)) U10`` for U10 [m/s].
 
-    The drag law has no closed-form inverse, so this bisects on the monotone
-    branch below the fit's turning point (~68 m/s, far above any usable wind).
+    The drag law has no closed-form inverse and is **not monotone**: the
+    Zijlema fit turns over at U10 ~ 50.7 m/s (u* = 1.9441) and falls back to
+    zero at 100 m/s where Cd clips. Bisection is therefore restricted to the
+    rising branch, and a u* above the attainable maximum raises rather than
+    silently returning the bracket end — that value cannot have come from this
+    drag law, so it signals a unit error or a corrupt wind field.
     """
     target = float(u_star)
     if target <= 0.0:
         return 0.0
-    lo, hi = 0.0, 100.0
+    if target > U_STAR_MAX:
+        raise ValueError(
+            f"u* = {target:.4f} m/s exceeds the maximum the drag law can produce "
+            f"({U_STAR_MAX:.4f} m/s at U10 = {U10_TURNING_POINT:.1f} m/s); check the "
+            "wind field's units"
+        )
+    lo, hi = 0.0, U10_TURNING_POINT
     for _ in range(200):
         mid = 0.5 * (lo + hi)
         if float(friction_velocity(mid)) < target:

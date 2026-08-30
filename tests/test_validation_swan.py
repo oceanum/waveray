@@ -135,7 +135,8 @@ def test_wind_on_swell_bounded_departure(tmp_path):
     criterion, worth a few percent here.
     """
     case = wind_on_swell_case(name="windswell")
-    sw, wr = _run_both(case, tmp_path)
+    # the closure is opt-in, so the capped bounds below must ask for it
+    sw, wr = _run_both(case, tmp_path, transform_kwargs={"saturation": True})
     _report(case, sw, wr, "plane beach, swell + 12 m/s onshore wind (SWAN full physics)")
 
     nowind = plane_beach_case(name="windswell_ref", dpm=270.0)
@@ -147,7 +148,7 @@ def test_wind_on_swell_bounded_departure(tmp_path):
     assert np.all(wr["HSIGN"] > wr_nowind["HSIGN"]), "wind input must add energy"
     ratio = wr["HSIGN"] / sw["HSIGN"]
     print(
-        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 0.97-1.09 across runs)"
+        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 0.96-1.09 across runs)"
         f"\n  without the cap: {np.round(uncapped / sw['HSIGN'], 2)} (measured 1.03-1.25)"
     )
     assert np.all(ratio > 0.85), "waveray fell below SWAN"
@@ -165,7 +166,7 @@ def test_wind_growth_from_zero(tmp_path):
     """
     case = wind_growth_case(name="windsea")
     assert case.swan_full_physics, "the surrogate must be measured against real SWAN physics"
-    sw, wr = _run_both(case, tmp_path)
+    sw, wr = _run_both(case, tmp_path, transform_kwargs={"saturation": True})
     _report(case, sw, wr, "flat bottom, 12 m/s wind, zero boundary energy (SWAN: full physics)")
 
     with warnings.catch_warnings():
@@ -176,7 +177,7 @@ def test_wind_growth_from_zero(tmp_path):
     assert np.all(np.diff(sw["HSIGN"]) > 0), "SWAN must grow with fetch"
     ratio = wr["HSIGN"] / sw["HSIGN"]
     print(
-        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 0.92-0.95)"
+        f"  waveray/SWAN ratio: {np.round(ratio, 2)} (measured 1.01-1.05)"
         f"\n  without the saturation cap: {np.round(uncapped / sw['HSIGN'], 2)} (measured 2.2-3.2)"
     )
     assert np.all(ratio > 0.7), "wind-sea generation collapsed"
@@ -275,6 +276,9 @@ def test_real_bathymetry_against_swan(tmp_path):
     _report(case, sw, wr, "GEBCO bathymetry (Noordwijk, NL), swell only")
 
     rel = np.abs(wr["HSIGN"] - sw["HSIGN"]) / sw["HSIGN"]
-    print(f"  max Hs difference: {rel.max():.1%}")
-    assert np.all(rel < 0.20), f"Hs differs by {rel.max():.1%} on real bathymetry"
+    print(f"  max Hs difference: {rel.max():.1%} (measured 6.7-19.8%)")
+    # Widened from 0.20 after the switch to full-physics SWAN: whitecapping now
+    # acts on the swell during propagation, which moved this case from 4.3-15.9%
+    # to 6.7-19.8% and left the old bound sitting on 0.198.
+    assert np.all(rel < 0.28), f"Hs differs by {rel.max():.1%} on real bathymetry"
     assert np.all(np.abs((wr["DIR"] - sw["DIR"] + 180) % 360 - 180) < 15.0)

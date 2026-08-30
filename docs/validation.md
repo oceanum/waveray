@@ -103,10 +103,10 @@ the target rather than along the path.
 |---|---|---|---|
 | Plane beach, shore-normal swell, 20→6 m | Hs 1.962→2.147 m | 1.960→2.153 m | **0.31 %** |
 | Plane beach, 30° oblique — refracted direction | 246.0→256.7° | 246.7→257.4° | **< 0.8°** (Hs 0.62 %) |
-| Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.380→2.149 m | 2.483→2.490 m | 4.3 – 15.9 % |
+| Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.328→2.078 m | 2.483→2.490 m | 6.7 – 19.8 % |
 | Circular island, deep lee | Hs 0.466 m | 0.675 m | ×1.45 |
-| Swell + 12 m/s wind, 15 km fetch | Hs 2.176→2.470 m | 2.116→2.603 m | ×0.97 – 1.09 |
-| Wind sea from calm, peak resolved | Hs 0.322→0.644 m | 0.304→0.591 m | ×0.92 – 0.95 |
+| Swell + 12 m/s wind, 15 km fetch | Hs 2.176→2.470 m | 2.096→2.686 m | ×0.96 – 1.09 |
+| Wind sea from calm, peak resolved | Hs 0.322→0.644 m | 0.332→0.653 m | ×1.01 – 1.05 |
 
 Reading the table: on the analytic beach the operator is essentially exact —
 refraction and shoaling are reproduced to a fraction of a percent. On real

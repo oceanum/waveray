@@ -57,12 +57,15 @@ sinks over a 15 km fetch and it grows a 2 m swell to 77.8 m (waveray reaches
 35.0 m on the same case with its ceiling removed). SWAN guards against this
 by raising a level-2 error for a third-generation wind without quadruplets;
 waveray ships a `max_growth` ceiling (default 100× energy per ray path) that
-warns when it binds. The [wind-sea saturation cap](wind.md#wind-sea-saturation-the-closure)
-supplies the outcome of that balance empirically, which brings the measured
-error against full-physics SWAN at 12 m/s to 0.97–1.09× with swell present
-over 15 km and 0.92–0.95× growing a sea from calm (2.2–3.2× without it).
-The cap is an empirical closure, not a SWAN source term, and the residual
-error still grows with fetch: treat a nearshore domain as the envelope. See
+warns when it binds. The optional [wind-sea saturation closure](wind.md#wind-sea-saturation-the-closure)
+supplies the outcome of that balance empirically. It caps the energy the wind
+*adds* — never the total, so swell is exempt by construction — and brings the
+measured error against full-physics SWAN to within 13 % with swell present and
+about 28 % worst case generating a sea, across 8–18 m/s, against an uncapped
+worst of 466 %. It is fitted rather than derived, so it is **off by default**,
+and one constant cannot serve every wind speed: `saturation_k` is exposed for
+site tuning. At low wind and short fetch the operator under-produces before any
+cap applies, which no ceiling can correct. See
 [Wind forcing](wind.md#the-growth-ceiling-max_growth).
 
 ## Fixed water level

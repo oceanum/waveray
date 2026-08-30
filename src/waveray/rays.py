@@ -128,6 +128,7 @@ class RayFan:
     y: np.ndarray  # (n,) exit / stop y [m]
     theta: np.ndarray  # (n,) propagation direction at exit [rad, math convention]
     atten: np.ndarray  # (n,) net path decay exponent: friction minus wind growth
+    atten_nowind: np.ndarray | None = None  # (n,) same path, friction only
     paths: list[np.ndarray] | None = None  # per-ray (m_i, 2) local-metre polylines
     seg: np.ndarray | None = None  # (n,) crossed boundary-line segment, -1 if none
     u: np.ndarray | None = None  # (n,) fractional position along the crossed segment
@@ -253,6 +254,10 @@ def trace_backward(
     y = np.full(n, float(y0))
     th = theta0.copy()
     atten = np.zeros(n)
+    # the same rays with the wind term omitted: the geometry is identical,
+    # only the path exponent differs, so one trace gives both operators and
+    # the wind-driven *increment* can be isolated at transform time
+    atten_nw = np.zeros(n) if field.wind is not None else None
     gen = np.zeros(n) if field.lin_a is not None else None
     atten_floor = (
         -np.log(max_growth) if (max_growth is not None and field.wind is not None) else None
@@ -327,6 +332,7 @@ def trace_backward(
             rate = np.zeros(xa.size)
             if field.fric is not None:
                 rate += bilinear(field.fric, grid.x, grid.y, xm, ym)
+            rate_nowind = rate.copy() if atten_nw is not None else None
             if field.wind is not None:
                 # Komen exponential growth: negative contribution to the net
                 # decay exponent. cos(theta - theta_w) is expanded through the
@@ -349,6 +355,8 @@ def trace_backward(
                     q = cm * la * np.maximum(0.0, ux * cw + uy * sw) ** 4
                     gen[active] += q * np.exp(-(atten[active] + 0.5 * rate * step)) * step
             atten[active] += rate * step
+            if atten_nw is not None:
+                atten_nw[active] += rate_nowind * step
             if atten_floor is not None:
                 # Running floor, re-applied every step: once a ray is on the
                 # floor, further growth is discarded but so is further friction
@@ -391,6 +399,7 @@ def trace_backward(
         y=y,
         theta=th,
         atten=atten,
+        atten_nowind=atten_nw,
         paths=paths,
         seg=seg,
         u=u,

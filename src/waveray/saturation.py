@@ -2,31 +2,32 @@
 
 Wind input is a source term with no sink: the operator carries the Komen
 growth but not the whitecapping and quadruplet interactions that balance it
-in a spectral model, so the transformed spectrum grows without limit. The
-damage is concentrated in the high-frequency tail, where the group velocity
-is small and a ray therefore spends a long time under the wind — at 0.4 Hz
-over a 15 km fetch the gain ``exp(B L / cg)`` reaches ~1e6, and it is the
-*boundary* spectrum's tail being amplified, not the locally seeded sea, that
-dominates the error.
+in a spectral model, so the wind contribution grows without limit. The damage
+is concentrated in the high-frequency tail, where the group velocity is small
+and a ray therefore spends a long time under the wind — at 0.4 Hz over a
+15 km fetch the gain ``exp(B L / cg)`` reaches ~1e6, and it is the *boundary*
+spectrum's tail being amplified, not the locally seeded sea, that dominates
+the error.
 
-Rather than model the missing sinks, this module imposes their outcome. A
-wind sea cannot exceed
+Rather than model the missing sinks, this module bounds their outcome: the
+energy the wind *adds* cannot exceed what the same wind would raise over the
+fetch available, which is the fetch-limited (JONSWAP) spectrum.
 
-- the **fully developed** (Pierson-Moskowitz) spectrum for its own wind, which
-  bounds the tail and sits well above any swell peak, nor
-- a multiple of the **fetch-limited** (JONSWAP) spectrum for the fetch
-  actually available, which is what permits the peak overshoot of a young,
-  locally generated sea — a plain PM cap clips that and costs a factor of two.
+Crucially the cap is applied to the wind **increment**
 
-The cap is the larger of the two, applied to the directionally-integrated
-E(f) with each frequency's directional distribution scaled proportionally.
-This is the same nonlinear post-step pattern as the depth-limited breaking
-cap, and it is inert on a spectrum that carries no wind sea.
+    increment = (T_wind - T_nowind) . E_b  +  E0
 
-``SATURATION_K = 3.0`` was calibrated against stationary SWAN 41.51A with its
-full physics (see ``tests/test_validation_swan.py``); it is the value that
-minimises the worst-case error across both wind regimes. This is an
-empirical closure, not one of SWAN's source terms.
+and never to the total. Propagated swell is therefore exempt by construction,
+and a calm wind reduces exactly to the no-wind answer. An earlier version
+capped the total against a Pierson-Moskowitz reference and destroyed swell:
+both spectral references roll off as ``exp(-1.25 (f/f_p)^-4)`` below the
+wind-sea peak, so any swell whose peak sits below it was clipped to nothing —
+a 14 s swell under an 8 m/s breeze lost 71 % of its height.
+
+``SATURATION_K`` scales the fetch-limited reference. It is an empirical
+constant fitted against stationary SWAN 41.51A with its full physics, **not**
+one of SWAN's source terms, and it does not hold equally at all wind speeds:
+see the calibration table in the wind forcing guide before relying on it.
 """
 
 from __future__ import annotations
@@ -39,8 +40,13 @@ from .dispersion import GRAV
 #: Phillips constant of the fully developed spectrum.
 ALPHA_PM = 0.0081
 
-#: Multiplier on the fetch-limited spectrum, calibrated against SWAN.
-SATURATION_K = 3.0
+#: Multiplier on the fetch-limited spectrum. Fitted against full-physics
+#: SWAN at 8, 12 and 18 m/s: k=4 minimises the worst case across both wind
+#: regimes (27.5 %, against 40.7 % at k=2 and 46.5 % at k=9). See the wind
+#: forcing guide for the per-regime envelope — a single constant cannot
+#: serve all wind speeds, because the correction needed grows ~3x from
+#: 8 to 18 m/s.
+SATURATION_K = 4.0
 
 
 def pm_spectrum(freqs: np.ndarray, u_star: float) -> np.ndarray:
@@ -75,35 +81,59 @@ def jonswap_fetch_limited(freqs: np.ndarray, u10: float, fetch: float) -> np.nda
 def saturation_cap(
     freqs: np.ndarray,
     u10: float,
-    u_star: float,
     fetch: float,
     k: float = SATURATION_K,
 ) -> np.ndarray:
-    """Per-frequency ceiling on E(f) [m^2/Hz] for a wind sea."""
-    return np.maximum(pm_spectrum(freqs, u_star), k * jonswap_fetch_limited(freqs, u10, fetch))
+    """Per-frequency ceiling [m^2/Hz] on the energy the wind may add.
+
+    The fetch-limited spectrum alone: it already tends to the fully developed
+    form at long fetch, so it self-bounds. (A Pierson-Moskowitz branch was
+    tried and removed — for every fetch this code can produce, ``k`` times the
+    fetch-limited spectrum exceeds PM at and above its peak, so PM only ever
+    governed *below* the peak, which is where swell lives.)
+    """
+    return k * jonswap_fetch_limited(freqs, u10, fetch)
 
 
 def apply_saturation(
-    efth: np.ndarray,
+    base: np.ndarray,
+    increment: np.ndarray,
     freqs: np.ndarray,
     dirs: np.ndarray,
     u10: float,
-    u_star: float,
     fetch: float,
     k: float = SATURATION_K,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Cap ``efth(..., nf, ndir)`` at the wind-sea saturation level.
+    """Cap the wind-added part of a transformed spectrum.
 
-    Returns ``(efth_capped, scale)`` where ``scale`` is the per-frequency
-    factor applied (<= 1), broadcast over the leading dimensions.
+    ``base`` is the spectrum the same rays give with the wind term omitted,
+    and ``increment`` is what the wind adds on top; the result is
+    ``base + increment * scale``. Taking the two separately rather than the
+    total is deliberate: when a runaway makes the increment dwarf the base —
+    the case the cap exists for — recovering the base by subtraction cancels
+    to noise and can even produce negative energies.
+
+    Only the increment is tested against the ceiling, so whatever the wind did
+    not add passes through untouched and swell is exempt by construction.
+
+    Note the ceiling falls away below the wind-sea peak, where the
+    fetch-limited spectrum is negligible. Wind amplification of a swell longer
+    than the local wind sea is therefore suppressed rather than bounded. That
+    is conservative — the result can never fall below ``base`` — and it only
+    bites for a wind strong enough to force a swell (28 u* > c), which is
+    outside the regime this closure was fitted for.
+
+    Returns ``(capped, scale)`` with ``scale`` (<= 1) the per-frequency factor
+    applied to the increment.
     """
-    efth = np.asarray(efth, dtype=float)
-    cap = saturation_cap(freqs, u10, u_star, fetch, k=k)
-    ef = efth.sum(axis=-1) * dir_resolution(dirs)  # (..., nf) m^2/Hz
+    base = np.asarray(base, dtype=float)
+    increment = np.asarray(increment, dtype=float)
+    cap = saturation_cap(freqs, u10, fetch, k=k)
+    ef = increment.sum(axis=-1) * dir_resolution(dirs)  # (..., nf) added by the wind
     with np.errstate(invalid="ignore", divide="ignore"):
         scale = np.where(ef > cap, cap / np.maximum(ef, 1e-300), 1.0)
     scale = np.where(np.isfinite(scale), scale, 1.0)
-    return efth * scale[..., None], scale
+    return base + increment * scale[..., None], scale
 
 
 def upwind_fetch(

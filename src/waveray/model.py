@@ -53,6 +53,7 @@ class SiteModel:
         positive: str = "down",
         gamma: float = 0.73,
         breaking_method: str = "miche",
+        saturation_k: float = SATURATION_K,
         **ray_kwargs,
     ) -> SiteModel:
         """Build the transfer operator for one target site.
@@ -96,7 +97,12 @@ class SiteModel:
             # retained so transform() can verify boundary spectra site order
             op.attrs["bp_lon"] = [float(v) for v in bpts[:, 0]]
             op.attrs["bp_lat"] = [float(v) for v in bpts[:, 1]]
-        return cls(operator=op, gamma=gamma, breaking_method=breaking_method)
+        return cls(
+            operator=op,
+            gamma=gamma,
+            breaking_method=breaking_method,
+            saturation_k=saturation_k,
+        )
 
     # ------------------------------------------------------------------ #
     def transform(
@@ -105,7 +111,7 @@ class SiteModel:
         site_dim: str = "site",
         tide: xr.DataArray | np.ndarray | float | None = None,
         breaking: bool = True,
-        saturation: bool = True,
+        saturation: bool = False,
     ) -> xr.DataArray:
         """Transform boundary spectra to the target point.
 
@@ -123,6 +129,8 @@ class SiteModel:
             breaking cap: scalar, or array/DataArray matching the leading
             (non-spectral) dims of efth.
         breaking : apply the depth-limited cap (default True).
+        saturation : bound the energy the wind adds by the fetch-limited
+            spectrum (default False; empirical closure, see the wind guide).
         """
         op = self.operator
         if isinstance(efth, xr.Dataset):
@@ -171,16 +179,17 @@ class SiteModel:
         out = op.apply(ordered.values)
 
         sat_scale = None
-        if saturation and "u10_target" in op.attrs:
-            # Wind input has no sink in the operator, so the transformed
-            # spectrum is capped at the wind-sea saturation level before the
-            # depth-limited cap. Inert on a spectrum with no wind sea.
+        if saturation and op.T_nowind is not None:
+            # Cap only what the wind ADDED. The rays are identical with and
+            # without the wind term, so the increment is exactly recoverable,
+            # and propagated swell never sees the ceiling.
+            out_nowind = op.apply_nowind(ordered.values)
             out, sat_scale = apply_saturation(
-                out,
+                out_nowind,
+                out - out_nowind,
                 op.freq,
                 op.dir_t,
                 u10=float(op.attrs["u10_target"]),
-                u_star=float(op.attrs["u_star_target"]),
                 fetch=float(op.attrs["wind_fetch"]),
                 k=self.saturation_k,
             )
@@ -231,6 +240,7 @@ class SiteModel:
         ds = self.operator.to_dataset()
         ds.attrs["gamma"] = self.gamma
         ds.attrs["breaking_method"] = self.breaking_method
+        ds.attrs["saturation_k"] = self.saturation_k
         ds.to_netcdf(path)
 
     @classmethod
@@ -239,4 +249,10 @@ class SiteModel:
             ds = raw.load()
         gamma = float(ds.attrs.pop("gamma", 0.73))
         method = str(ds.attrs.pop("breaking_method", "miche"))
-        return cls(operator=TransferOperator.from_dataset(ds), gamma=gamma, breaking_method=method)
+        sat_k = float(ds.attrs.pop("saturation_k", SATURATION_K))
+        return cls(
+            operator=TransferOperator.from_dataset(ds),
+            gamma=gamma,
+            breaking_method=method,
+            saturation_k=sat_k,
+        )

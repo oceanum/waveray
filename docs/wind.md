@@ -128,58 +128,88 @@ bins, or reduce the wind — do not simply raise the ceiling. Pass
 
 ### Wind-sea saturation — the closure
 
-Wind input is a source with no sink. The operator carries the Komen growth
-but not the whitecapping and quadruplet interactions that balance it, so the
-transformed spectrum grows without limit — and the damage is not where you
-might expect. Decomposing the error on a 15 km fetch at 12 m/s:
+Wind input is a source with no sink. The operator carries the Komen growth but
+not the whitecapping and quadruplet interactions that balance it, so the wind
+contribution grows without limit — and not where you might expect. Decomposing
+the error on a 15 km fetch at 12 m/s:
 
 | Contribution | energy added (Hs²) | SWAN |
 |---|---|---|
 | Amplification of the boundary spectrum, `T·E_b` | 1.12 / 3.01 / 4.29 | 0.81 / 1.00 / 1.03 |
 | Locally seeded sea, `E0` | 0.07 / 0.34 / 0.60 | — |
 
-Almost all of it is the **boundary spectrum's tail being amplified**: at
-0.4 Hz over 15 km the gain `exp(B L / cg)` reaches ~10⁶, because `cg` is small
-there and the ray spends a correspondingly long time under the wind. SWAN's
-whitecapping saturates that tail immediately.
+Almost all of it is the **boundary spectrum's tail being amplified**: at 0.4 Hz
+over 15 km the gain `exp(B L / cg)` reaches ~10⁶, because `cg` is small there
+and the ray spends correspondingly long under the wind. SWAN's whitecapping
+saturates that tail immediately.
 
-Rather than model the missing sinks — whitecapping's coefficient depends on
-the integral steepness of the whole spectrum, so it cannot live in a
-spectrum-independent operator — waveray imposes their **outcome**. A wind sea
-cannot exceed
+Rather than model the missing sinks, waveray bounds their outcome. The energy
+the wind *adds* cannot exceed what that wind would raise over the fetch
+available:
 
 ```text
-cap(f) = max[ E_PM(f, u*),  k · E_JONSWAP(f, U10, X) ],   k = 3
+increment = (T_wind − T_nowind)·E_b + E0
+cap(f)    = k · E_JONSWAP(f, U10, X),   k = 4
 ```
 
-the fully developed spectrum for its own wind (which bounds the tail and sits
-above any swell peak, so swell is never touched) or a multiple of the
-fetch-limited spectrum for the fetch actually available (which permits the
-peak overshoot of a young sea — a plain PM cap clips it and costs a factor of
-two). The cap is applied to the directionally-integrated `E(f)` at the target,
-scaling each frequency's directional distribution proportionally, in the same
-post-step slot as depth-limited breaking.
+The cap is applied to the **increment**, never to the total. The operator
+stores a second transfer matrix with the wind term omitted — the rays are
+identical, only the path exponent differs, so it costs one extra accumulator
+in the same trace — which makes the increment exactly recoverable. Propagated
+swell is therefore exempt **by construction**, and a calm wind reduces exactly
+to the no-wind answer.
 
-The fetch `X` is measured from the bathymetry: `upwind_fetch()` marches from
-the target into the wind until it reaches land or the domain edge. It, the
-local `u*` and `U10` are computed at build time and stored on the operator.
+> [!WARNING]
+> An earlier version capped the *total* against a Pierson–Moskowitz reference
+> and destroyed swell. Both spectral references roll off as
+> `exp(-1.25 (f/f_p)⁻⁴)` below the wind-sea peak, so any swell whose peak sits
+> below it was clipped to nothing: a 14 s swell under an 8 m/s breeze lost
+> **71 %** of its height. If you are extending this closure, test it on a swell
+> longer than the local wind sea — that is the case that breaks a wind-sea
+> reference applied to a total spectrum.
 
-> [!NOTE]
-> `k = 3` was calibrated against full-physics SWAN and is the value that
-> minimises worst-case error across both wind regimes (k=1 → 40 %, k=3 →
-> 11 %, k=5 → 17 %). This is an empirical closure, **not** one of SWAN's
-> source terms — the rest of the wind formulation is SWAN's, this part is
-> waveray's own.
+The fetch `X` is measured from the bathymetry — `upwind_fetch()` marches from
+the target into the wind until land or the domain edge — or given explicitly
+via `build_operator(..., fetch=...)` when you know the real fetch and the
+domain understates it.
 
-It is on by default whenever the operator carries wind, and reports itself:
+#### What it is worth, and where it runs out
+
+Fitted against full-physics SWAN at three wind speeds. Worst |ratio − 1| over
+the targets of each case:
+
+| Case | k=2 | **k=4** | k=9 |
+|---|---|---|---|
+| Wind sea from calm, 8 m/s | 40.7 % | **27.5 %** | 21.6 % |
+| Wind sea from calm, 12 m/s | 25.9 % | **2.3 %** | 30.2 % |
+| Wind sea from calm, 18 m/s | 31.3 % | **12.1 %** | 46.5 % |
+| Swell + wind, 8 m/s | 2.4 % | **3.6 %** | 5.3 % |
+| Swell + wind, 12 m/s | 6.4 % | **9.0 %** | 20.5 % |
+| Swell + wind, 18 m/s | 18.7 % | **12.7 %** | 23.8 % |
+
+`k = 4` is the default because it minimises the worst case (27.5 %, against an
+uncapped worst of 466 %). For the intended use — wind on top of swell — it is
+within 13 % across the whole range.
+
+Two limits are worth stating plainly rather than tuning against:
+
+- **One constant cannot serve every wind speed.** The correction the cap must
+  apply grows roughly threefold from 8 to 18 m/s. A fixed-shape reference with
+  a single multiplier cannot absorb that; `saturation_k` is exposed so you can
+  fit it to your own site and wind climate.
+- **At low wind and short fetch the operator under-produces *before* any cap.**
+  At 8 m/s over 1 km the uncapped operator already sits at 0.84 of SWAN, and a
+  cap can only subtract — so no `k` reaches parity there. That residual is a
+  seeding and downshift problem in the input term, not a ceiling problem, and
+  raising `k` will not fix it.
+
+The closure is **off by default** because it is fitted rather than derived:
 
 ```python
-efth_near = model.transform(efth, saturation=True)   # default
-efth_near.attrs["wind_saturation_scale_min"]         # smallest factor applied
-model.saturation_k = 3.0                             # tune per site
+efth_near = model.transform(efth, saturation=True)
+efth_near.attrs["wind_saturation_scale_min"]   # smallest factor applied
+model = SiteModel.build(..., saturation_k=5.0) # or tune per site
 ```
-
-Pass `saturation=False` for the raw, unbalanced source term.
 
 ### Friction velocity — Zijlema et al. (2012)
 
@@ -296,40 +326,19 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 (see [Validation](validation.md#against-swan-4151a-docker)). Measured with a
 12 m/s wind:
 
-| Case | SWAN physics | with the cap | without it |
-|---|---|---|---|
-| Swell only (no wind) | full | 0.999 – 1.003 | 0.999 – 1.003 |
-| Swell + wind, plane beach, 15 km | full | **0.97 – 1.09** | 1.03 – 1.25 |
-| Wind sea from calm, 1–5 km | full | **0.92 – 0.95** | 2.18 – 3.25 |
-| Wind sea from calm, sinks off | wind input only | *(cap off by design)* | 0.60 – 0.76 |
+| Case | with the closure | without it |
+|---|---|---|
+| Swell only (no wind) | untouched by construction | untouched |
+| Swell + wind, 15 km, 12 m/s | 0.96 – 1.09 | 1.03 – 1.25 |
+| Wind sea from calm, 12 m/s | 1.01 – 1.05 | 2.18 – 3.25 |
 
-With the saturation cap the surrogate is within about 10 % of a real SWAN run
-with swell and wind, and within 8 % generating a sea from calm — the case that
-was a threefold over-prediction without it. The cap never engages on a
-swell-only spectrum, so the sub-percent propagation results are unaffected.
+The closure never engages on a spectrum the wind did not change, so the
+sub-percent propagation results are unaffected by it — that is a property of
+the design, not a measurement.
 
-The last row strips SWAN's sinks *and* the cap, so both models carry wind
-input alone; it isolates the source term from the closure. It runs on a
-narrower spectral grid by necessity: let unbalanced growth reach ~1 Hz and
-SWAN collapses to an all-zero solution, the same instability `max_growth`
-guards against, showing up as a numerical failure instead of a runaway.
-
-Conversely the full-physics rows *need* the peak resolved — on the swell grid
-SWAN never converges, because it is being asked to grow a sea whose peak
-frequency (~0.45 Hz at 12 m/s over 5 km) lies outside its own spectral range.
-The harness rejects both failure modes rather than quietly comparing against
-them.
-
-The remaining error still grows with fetch, so the honest envelope is a
-nearshore domain — a few kilometres to a few tens of kilometres — rather than
-an open-ocean fetch. Within that, wind input is now a genuinely useful
-correction rather than a hazard.
-
-A third test, `test_unbalanced_wind_runs_away_in_swan_too`, runs the 15 km
-swell case with SWAN's sinks disabled so both models carry the same physics.
-SWAN reaches 77.8 m and waveray 35.0 m from the same 2 m swell; with the
-default ceiling waveray gives 3.1 m. That is the evidence for `max_growth`:
-the instability is in the source term, not in this implementation of it.
+The remaining error grows with fetch and with wind speed, so the honest
+envelope is a nearshore domain of a few kilometres to a few tens of
+kilometres, used as a correction to swell that is already there.
 
 ## References
 
