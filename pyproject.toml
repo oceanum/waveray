@@ -46,6 +46,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "oceanum>=1.0",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
@@ -64,3 +65,9 @@ select = ["E", "F", "I", "W", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# SWAN validation runs the official SWAN docker image and takes minutes, so it
+# is opt-in: `uv run pytest -m swan -s`.
+addopts = "-m 'not swan'"
+markers = [
+    "swan: validation against stationary SWAN in docker (needs docker; slow)",
+]

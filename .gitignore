@@ -5,3 +5,13 @@ __pycache__/
 .ipynb_checkpoints/
 dist/
 site/
+
+# SWAN validation scratch (bathymetry, boundary spectra, PRINT/table output)
+_swan_runs*/
+*.prt
+*.tbl
+*.sp2
+*.bot
+Errfile
+norm_end
+swaninit

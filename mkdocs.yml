@@ -47,6 +47,7 @@ nav:
   - Guides:
       - Concepts: concepts.md
       - User guide: usage.md
+      - Wind forcing: wind.md
       - Oceanum Datamesh: datamesh.md
       - wavespectra interoperability: wavespectra.md
   - Reference:

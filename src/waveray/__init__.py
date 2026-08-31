@@ -12,15 +12,19 @@ from .model import SiteModel
 from .operator import TransferOperator, build_operator
 from .rays import BoundaryLine
 from .spectra import set_wavespectra_attrs, to_specdataset
+from .wind import WindField, drag_coefficient, friction_velocity
 
 __all__ = [
     "BoundaryLine",
     "LocalGrid",
     "SiteModel",
     "TransferOperator",
+    "WindField",
     "__version__",
     "build_operator",
+    "drag_coefficient",
     "fetch_datamesh_bathymetry",
+    "friction_velocity",
     "ray_paths_geojson",
     "set_wavespectra_attrs",
     "to_specdataset",

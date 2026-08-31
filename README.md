@@ -58,6 +58,15 @@ Setup, once per site:
    energy-flux shoaling identically (validated against analytic plane-beach
    solutions in the test suite).
 
+Along each ray path the coefficients also integrate the linear source terms:
+JONSWAP bottom friction (on by default) and, when a wind is supplied, SWAN's
+wind input — the Komen et al. (1984) exponential growth folded into the same
+path exponent, plus (optionally, `agrow=True`) the Cavaleri &
+Malanotte-Rizzoli (1981) linear growth accumulated into an additive spectrum
+that seeds locally generated wind sea. Wind can be a uniform
+`(speed, direction)` or a gridded snapshot, with u* from the Zijlema et
+al. (2012) drag law (SWAN's default).
+
 Runtime, per hindcast:
 
 4. `E_t = einsum(T, E_b)` over all timesteps at once.
@@ -110,13 +119,15 @@ ray_paths_geojson(bathy_grid, (x[0], y[0]), freqs=[0.06, 0.1],
 
 ## Notebooks
 
-Two executed, illustrated notebooks (plots included in the committed output):
+Executed, illustrated notebooks (plots included in the committed output):
 
 | Notebook | What it shows |
 |---|---|
 | [`notebooks/01_holland_downscaling.ipynb`](notebooks/01_holland_downscaling.ipynb) | End-to-end downscaling of a SWAN 1 km hindcast to a point off **Noordwijk aan Zee** through storms Pia and Henk: bathymetry, ray geometry and the arrival cone, offshore vs nearshore Hs, the directional spectrum before/after, validation against SWAN (r ≈ 0.99), and what depth-limited breaking contributes. |
 | [`notebooks/02_abrolhos_validation.ipynb`](notebooks/02_abrolhos_validation.ipynb) | Held-out validation on a **reef-fronted WA coast**, and an ablation isolating JONSWAP bottom friction (Hm0 bias +1.11 m → +0.18 m when friction is on). |
 | [`notebooks/03_boundary_line_termination.ipynb`](notebooks/03_boundary_line_termination.ipynb) | Terminating rays on the **line/ring through interior output sites** (`boundary_mode="line"/"ring"`) instead of the grid edge — plotted ray geometry and the shoaling-coefficient difference on a synthetic bay (no Datamesh token needed). |
+| [`notebooks/04_swan_validation_idealised.ipynb`](notebooks/04_swan_validation_idealised.ipynb) | **Against stationary SWAN** on idealised bathymetry, both models fed the identical boundary spectrum: plane beach shore-normal (Hs within 0.31%), 30° oblique refraction (direction within 0.91°), and a circular island where the deep lee is where a ray model and a spectral model legitimately part company. |
+| [`notebooks/05_swan_validation_wind.ipynb`](notebooks/05_swan_validation_wind.ipynb) | **Wind input against SWAN**: fetch-limited growth from calm, swell + wind on a plane beach, and the runaway demonstration — unbalanced wind input spans 156 orders of magnitude across the frequency range before the `max_growth` ceiling contains it. |
 
 ```bash
 uv sync --extra datamesh --extra notebooks
@@ -135,6 +146,19 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
 - Bottom friction IS included (JONSWAP, integrated along ray paths) and is ON
   by default with the SWAN swell coefficient `cf_jonswap=0.038`; pass
   `cf_jonswap=None` for pure refraction + shoaling. No triad interactions.
+- Wind input (SWAN formulations) is available but stationary: the wind is
+  baked into the operator at build time, like the bathymetry — build operators
+  per wind condition if the wind matters and varies. Only the wind *input*
+  term is represented; its nonlinear counterweights (whitecapping,
+  quadruplets) cannot live in a linear operator, so wind input is **unbounded**
+  and ships with a `max_growth` ceiling that warns when it binds. This is not
+  a ray-method artefact — SWAN with its sinks disabled grows a 2 m swell to
+  77.8 m over the same 15 km fetch. An optional **wind-sea saturation closure**
+  (off by default, empirical rather than derived) caps the energy the wind
+  *adds* — never the total, so swell is exempt by construction — bringing the
+  measured error against full-physics SWAN to within 13 % with swell present and
+  ~28 % worst case generating a sea across 8–18 m/s, against an uncapped worst
+  of 466 %.
 - Breaking is an endpoint cap, not accumulated dissipation along the approach
   — appropriate at berths and outside the inner surf zone; tune `gamma` per
   site against observations.
@@ -151,4 +175,12 @@ DATAMESH_TOKEN=... uv run jupyter lab notebooks/
 uv sync                     # or: uv sync --extra datamesh
 uv run pytest               # physics-validation suite
 uv run ruff check . && uv run ruff format --check .
+```
+
+Comparison against a real SWAN run is opt-in — it pulls the official SWAN
+docker image and takes a few minutes:
+
+```bash
+docker pull delftwaves/swan:latest
+uv run pytest -m swan -s    # stationary SWAN 41.51A vs waveray, same boundary spectra
 ```

@@ -28,6 +28,7 @@ import xarray as xr
 from .bathymetry import LocalGrid
 from .breaking import apply_breaking
 from .operator import TransferOperator, build_operator
+from .saturation import SATURATION_K, apply_saturation
 from .spectra import set_wavespectra_attrs
 
 
@@ -38,6 +39,7 @@ class SiteModel:
     operator: TransferOperator
     gamma: float = 0.73
     breaking_method: str = "miche"
+    saturation_k: float = SATURATION_K
 
     # ------------------------------------------------------------------ #
     @classmethod
@@ -51,6 +53,7 @@ class SiteModel:
         positive: str = "down",
         gamma: float = 0.73,
         breaking_method: str = "miche",
+        saturation_k: float = SATURATION_K,
         **ray_kwargs,
     ) -> SiteModel:
         """Build the transfer operator for one target site.
@@ -59,10 +62,13 @@ class SiteModel:
         geographic (DataArray, or LocalGrid with an origin), else (x, y) in
         grid metres. ``ray_kwargs`` pass through to
         :func:`waveray.operator.build_operator` (nsub, ds, max_steps, d_min,
-        cf_jonswap, boundary_mode). Pass ``boundary_mode="line"`` (or
-        ``"ring"``) to terminate rays on the polyline/polygon through
+        cf_jonswap, boundary_mode, wind, agrow). Pass ``boundary_mode="line"``
+        (or ``"ring"``) to terminate rays on the polyline/polygon through
         ``boundary_points`` when they sit inside the bathymetry, instead of the
-        default grid-perimeter termination.
+        default grid-perimeter termination. Pass ``wind=(speed, direction)``
+        (U10 [m/s], coming-from nautical deg) or a gridded snapshot Dataset to
+        add SWAN-formulation wind input along the rays; ``agrow=True`` also
+        seeds linear wind growth (requires spectra in m^2 / Hz / deg).
         """
         grid = (
             bathy
@@ -91,7 +97,12 @@ class SiteModel:
             # retained so transform() can verify boundary spectra site order
             op.attrs["bp_lon"] = [float(v) for v in bpts[:, 0]]
             op.attrs["bp_lat"] = [float(v) for v in bpts[:, 1]]
-        return cls(operator=op, gamma=gamma, breaking_method=breaking_method)
+        return cls(
+            operator=op,
+            gamma=gamma,
+            breaking_method=breaking_method,
+            saturation_k=saturation_k,
+        )
 
     # ------------------------------------------------------------------ #
     def transform(
@@ -100,6 +111,7 @@ class SiteModel:
         site_dim: str = "site",
         tide: xr.DataArray | np.ndarray | float | None = None,
         breaking: bool = True,
+        saturation: bool = False,
     ) -> xr.DataArray:
         """Transform boundary spectra to the target point.
 
@@ -117,6 +129,8 @@ class SiteModel:
             breaking cap: scalar, or array/DataArray matching the leading
             (non-spectral) dims of efth.
         breaking : apply the depth-limited cap (default True).
+        saturation : bound the energy the wind adds by the fetch-limited
+            spectrum (default False; empirical closure, see the wind guide).
         """
         op = self.operator
         if isinstance(efth, xr.Dataset):
@@ -164,6 +178,22 @@ class SiteModel:
         lead_dims = ordered.dims[:-3]
         out = op.apply(ordered.values)
 
+        sat_scale = None
+        if saturation and op.T_nowind is not None:
+            # Cap only what the wind ADDED. The rays are identical with and
+            # without the wind term, so the increment is exactly recoverable,
+            # and propagated swell never sees the ceiling.
+            out_nowind = op.apply_nowind(ordered.values)
+            out, sat_scale = apply_saturation(
+                out_nowind,
+                out - out_nowind,
+                op.freq,
+                op.dir_t,
+                u10=float(op.attrs["u10_target"]),
+                fetch=float(op.attrs["wind_fetch"]),
+                k=self.saturation_k,
+            )
+
         scale = None
         if breaking:
             tide_arr: np.ndarray | float
@@ -201,6 +231,8 @@ class SiteModel:
         )
         if scale is not None:
             result.attrs["breaking_scale_min"] = float(np.min(scale))
+        if sat_scale is not None:
+            result.attrs["wind_saturation_scale_min"] = float(np.min(sat_scale))
         return set_wavespectra_attrs(result)
 
     # ------------------------------------------------------------------ #
@@ -208,6 +240,7 @@ class SiteModel:
         ds = self.operator.to_dataset()
         ds.attrs["gamma"] = self.gamma
         ds.attrs["breaking_method"] = self.breaking_method
+        ds.attrs["saturation_k"] = self.saturation_k
         ds.to_netcdf(path)
 
     @classmethod
@@ -216,4 +249,10 @@ class SiteModel:
             ds = raw.load()
         gamma = float(ds.attrs.pop("gamma", 0.73))
         method = str(ds.attrs.pop("breaking_method", "miche"))
-        return cls(operator=TransferOperator.from_dataset(ds), gamma=gamma, breaking_method=method)
+        sat_k = float(ds.attrs.pop("saturation_k", SATURATION_K))
+        return cls(
+            operator=TransferOperator.from_dataset(ds),
+            gamma=gamma,
+            breaking_method=method,
+            saturation_k=sat_k,
+        )

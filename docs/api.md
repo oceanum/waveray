@@ -4,8 +4,9 @@ Everything in this page is importable from the top-level package unless noted.
 
 ```python
 from waveray import (
-    LocalGrid, SiteModel, TransferOperator,
-    build_operator, fetch_datamesh_bathymetry, ray_paths_geojson,
+    LocalGrid, SiteModel, TransferOperator, WindField,
+    build_operator, drag_coefficient, fetch_datamesh_bathymetry,
+    friction_velocity, ray_paths_geojson,
     set_wavespectra_attrs, to_specdataset,
 )
 ```
@@ -34,7 +35,8 @@ SiteModel.build(
 ```
 
 Traces rays once and assembles the transfer operator. `ray_kwargs` are `nsub`,
-`ds`, `max_steps`, `d_min`, `cf_jonswap`.
+`ds`, `max_steps`, `d_min`, `cf_jonswap`, `boundary_mode`, `wind`, `agrow`,
+`max_growth` (see [Wind forcing](wind.md) for the wind ones).
 
 ### `SiteModel.transform(...) -> xr.DataArray`
 
@@ -111,6 +113,10 @@ build_operator(
     max_steps=None,        # default ~1.5 domain perimeters
     d_min=0.3,             # grounding depth [m]
     cf_jonswap=0.038,      # JONSWAP friction; None disables
+    boundary_mode="bbox",  # "bbox" | "line" | "ring"
+    wind=None,             # (speed, dir) | xr.Dataset | WindField; see wind.md
+    agrow=False,           # also integrate linear wind growth into E0
+    max_growth=100.0,      # ceiling on wind-input gain per ray path; None disables
 ) -> TransferOperator
 ```
 
@@ -119,13 +125,14 @@ build_operator(
 | Member | Description |
 |---|---|
 | `.T` | `(nf, ndir_t, K, ndir_b)` transfer matrix |
+| `.E0` | `(nf, ndir_t)` additive wind-growth spectrum, or `None` (see [Wind forcing](wind.md)) |
 | `.freq`, `.dir_t`, `.dir_b` | spectral grid |
 | `.bp_x`, `.bp_y` | boundary point positions, metres |
 | `.target_x`, `.target_y`, `.depth_target` | target position and depth |
 | `.n_boundary` | `K` |
-| `.attrs` | `nsub`, `ds`, `d_min`, `max_steps`, `cf_jonswap`, `lost_fraction`, `landed_fraction` |
-| `.apply(efth)` | contract with `(..., K, nf, ndir_b)` → `(..., nf, ndir_t)` |
-| `.to_netcdf(path)` / `.from_netcdf(path)` | persistence |
+| `.attrs` | `nsub`, `ds`, `d_min`, `max_steps`, `cf_jonswap`, `boundary_mode`, `wind_source`, `agrow`, `growth_clipped_fraction`, `lost_fraction`, `landed_fraction`, `escaped_fraction` (+ `wind_speed`, `wind_dir` for uniform wind) |
+| `.apply(efth)` | contract with `(..., K, nf, ndir_b)` → `(..., nf, ndir_t)`, then add `E0` if present |
+| `.to_netcdf(path)` / `.from_netcdf(path)` | persistence (includes `E0`) |
 | `.to_dataset()` / `.from_dataset(ds)` | xarray round-trip |
 
 ---
@@ -174,6 +181,25 @@ freq_resolution(freqs)   # == SpecArray.df
 dir_resolution(dirs)     # == SpecArray.dd
 ```
 
+## `waveray.wind`
+
+```python
+from waveray import WindField, drag_coefficient, friction_velocity
+from waveray.wind import RHO_AIR_WATER, as_wind_field
+
+drag_coefficient(u10)        # Zijlema et al. (2012) drag law (SWAN default)
+friction_velocity(u10)       # u* = sqrt(Cd) * U10
+
+WindField.uniform(grid, speed, direction)    # coming-from nautical degrees
+WindField.from_dataset(grid, ds)             # gridded single snapshot
+as_wind_field(wind, grid)                    # normalise build_operator's wind arg
+```
+
+`WindField` holds the friction-velocity vector `(usx, usy)` on the LocalGrid
+nodes (going-to math convention). `RHO_AIR_WATER = 0.00125` is SWAN's
+air/water density ratio used in the Komen growth term. Full guide:
+[Wind forcing](wind.md).
+
 ## `waveray.dispersion`
 
 ```python
@@ -191,12 +217,15 @@ ccg(omega, depth)            # the ray invariant factor c * cg
 from waveray.rays import SpeedField, trace_backward, RayFan
 from waveray.rays import STATUS_EXITED, STATUS_LANDED, STATUS_LOST
 
-SpeedField.build(grid, omega, d_min, cf_jonswap=None)
-trace_backward(field, x0, y0, theta0, ds, max_steps, d_min=0.3, record_paths=False) -> RayFan
+SpeedField.build(grid, omega, d_min, cf_jonswap=None, wind=None, agrow=False)
+trace_backward(field, x0, y0, theta0, ds, max_steps, d_min=0.3, record_paths=False,
+               boundary_line=None, max_growth=None) -> RayFan
 ```
 
-`RayFan` carries `status`, `x`, `y`, `theta`, `atten`, and (when
-`record_paths=True`) `paths`: a list of `(m_i, 2)` local-metre polylines.
+`RayFan` carries `status`, `x`, `y`, `theta`, `atten` (net path exponent:
+friction minus wind growth), `gen` (additive wind-generated `E*c*cg`, only
+with `agrow`), and (when `record_paths=True`) `paths`: a list of `(m_i, 2)`
+local-metre polylines.
 
 ## Direction conventions
 

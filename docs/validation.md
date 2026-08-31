@@ -79,6 +79,62 @@ solutions, because linear ray theory has them (`tests/`):
 - **Friction** attenuates on long shallow paths and is negligible in deep water
 - **Integrated parameters** agree with wavespectra to 1e-12
 
+## Against SWAN 41.51A (docker)
+
+The hindcast comparisons above measure waveray against a parent model run by
+someone else, so grid, boundary and settings all differ. `tests/validation/`
+removes those differences: it runs **stationary SWAN 41.51A** in the official
+`delftwaves/swan` image on the same bathymetry, the same spectral grid and the
+*same* boundary spectrum (written directly as a stationary SWAN ASCII spectral
+file), so what is left is the transformation itself.
+
+```bash
+docker pull delftwaves/swan:latest
+uv run pytest -m swan -s          # excluded from the default suite; takes minutes
+```
+
+SWAN runs with its **full physics** — quadruplets and whitecapping on — because
+the question is how good a surrogate waveray is for a real SWAN run, not
+whether it reimplements a subset of SWAN (the closed-form tests settle that).
+Depth-induced breaking is the one term left off, since waveray applies it at
+the target rather than along the path.
+
+| Case | SWAN | waveray | Difference |
+|---|---|---|---|
+| Plane beach, shore-normal swell, 20→6 m | Hs 1.962→2.147 m | 1.960→2.153 m | **0.31 %** |
+| Plane beach, 30° oblique — refracted direction | 246.0→256.7° | 246.7→257.4° | **< 0.8°** (Hs 0.62 %) |
+| Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.328→2.078 m | 2.483→2.490 m | 6.7 – 19.8 % |
+| Circular island, deep lee | Hs 0.466 m | 0.675 m | ×1.45 |
+| Swell + 12 m/s wind, 15 km fetch | Hs 2.176→2.470 m | 2.096→2.686 m | ×0.96 – 1.09 |
+| Wind sea from calm, peak resolved | Hs 0.322→0.644 m | 0.332→0.653 m | ×1.01 – 1.05 |
+
+Reading the table: on the analytic beach the operator is essentially exact —
+refraction and shoaling are reproduced to a fraction of a percent. On real
+bathymetry the gap widens shoreward, as the depth field stops being smooth and
+alongshore-uniform. The island lee is the deep shadow behind a blocking
+obstacle, where neither model has diffraction and a ray model and a spectral
+model are entitled to disagree; treat sheltered-lee heights as indicative.
+
+The two wind rows are within a few percent, but only because of the
+[wind-sea saturation cap](wind.md#wind-sea-saturation-the-closure). Without
+it the same cases run 1.03–1.25× and 2.18–3.25×: wind input is a source with
+no sink, and the operator amplifies the boundary spectrum's tail without
+limit. The cap supplies the outcome of the balance it cannot model, and never
+engages on a swell-only spectrum — which is why the propagation rows above are
+unaffected by it. It is an empirical closure calibrated against these SWAN
+runs, not one of SWAN's source terms.
+
+Two supporting tests make the point sharper. Strip SWAN's sinks *and* the cap,
+so both models carry wind input alone, and the agreement is tens of percent —
+the formulation is right, the balance is what was missing. Do the same on the
+15 km swell case and *both* models run away, SWAN to 77.8 m and waveray to
+35.0 m from the same 2 m swell, which is the evidence behind waveray's
+`max_growth` ceiling.
+
+Every SWAN run in the suite is checked for convergence, and rejected if it
+stopped at the iteration cap or collapsed to zero — a stationary run that did
+either is not reproducible and cannot serve as a reference.
+
 ## Interpreting these numbers
 
 The honest summary: on a smooth coast waveray reproduces its parent SWAN model

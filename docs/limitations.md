@@ -37,11 +37,36 @@ zone. It is not a surf-zone model. Tune `gamma` per site against observations.
 
 ## Stationary and linear
 
-No temporal nonlinear evolution: no quadruplet or triad interactions, no wind
-input, no whitecapping along the path. Frequencies do not exchange energy — the
+No temporal nonlinear evolution: no quadruplet or triad interactions, no
+whitecapping along the path. Frequencies do not exchange energy — the
 operator is frequency-diagonal. Over a last-mile domain this is a good
 approximation (see [Concepts](concepts.md#why-stationary-is-enough)); over a
 fetch it is not.
+
+Wind input (SWAN's Komen exponential growth, optionally the
+Cavaleri–Malanotte-Rizzoli linear growth) *is* available via the `wind`
+build argument, but with two caveats that follow from the linear-operator
+design: the wind is stationary — baked into the operator at build time, so
+build one operator per wind condition if it varies and matters — and only
+the *input* term is represented, without the nonlinear sinks that balance it
+in SWAN.
+
+That second caveat is sharper than it sounds. Wind input alone is
+**unbounded**, and not just here: run SWAN itself with wind input and no
+sinks over a 15 km fetch and it grows a 2 m swell to 77.8 m (waveray reaches
+35.0 m on the same case with its ceiling removed). SWAN guards against this
+by raising a level-2 error for a third-generation wind without quadruplets;
+waveray ships a `max_growth` ceiling (default 100× energy per ray path) that
+warns when it binds. The optional [wind-sea saturation closure](wind.md#wind-sea-saturation-the-closure)
+supplies the outcome of that balance empirically. It caps the energy the wind
+*adds* — never the total, so swell is exempt by construction — and brings the
+measured error against full-physics SWAN to within 13 % with swell present and
+about 28 % worst case generating a sea, across 8–18 m/s, against an uncapped
+worst of 466 %. It is fitted rather than derived, so it is **off by default**,
+and one constant cannot serve every wind speed: `saturation_k` is exposed for
+site tuning. At low wind and short fetch the operator under-produces before any
+cap applies, which no ceiling can correct. See
+[Wind forcing](wind.md#the-growth-ceiling-max_growth).
 
 ## Fixed water level
 

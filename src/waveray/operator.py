@@ -29,7 +29,7 @@ import numpy as np
 import xarray as xr
 
 from ._version import __version__ as _pkg_version
-from .bathymetry import LocalGrid
+from .bathymetry import LocalGrid, bilinear
 from .dispersion import ccg
 from .rays import (
     STATUS_EXITED,
@@ -39,6 +39,8 @@ from .rays import (
     SpeedField,
     trace_backward,
 )
+from .saturation import upwind_fetch
+from .wind import WindField, as_wind_field, u10_from_u_star
 
 
 def dir_to_theta(dir_nautical_deg: np.ndarray) -> np.ndarray:
@@ -111,6 +113,8 @@ class TransferOperator:
     target_y: float
     depth_target: float
     attrs: dict = field(default_factory=dict)
+    E0: np.ndarray | None = None  # (nf, ndir_t) additive wind-generated density
+    T_nowind: np.ndarray | None = None  # same rays with the wind term omitted
 
     @property
     def n_boundary(self) -> int:
@@ -120,7 +124,10 @@ class TransferOperator:
         """Apply to stacked boundary spectra ``(..., K, nf, ndir_b)``.
 
         Returns the target spectra ``(..., nf, ndir_t)`` in the same density
-        units as the input (the coefficients are density ratios).
+        units as the input (the coefficients are density ratios). The units
+        must be m^2 / Hz / deg when the operator carries an additive
+        wind-growth spectrum ``E0`` (built with ``agrow=True``), which is
+        added after the linear transfer.
         """
         e = np.asarray(efth_boundary, dtype=float)
         if e.shape[-3:] != (self.n_boundary, self.freq.size, self.dir_b.size):
@@ -128,16 +135,36 @@ class TransferOperator:
                 f"expected trailing dims (K={self.n_boundary}, nf={self.freq.size}, "
                 f"ndir_b={self.dir_b.size}), got {e.shape[-3:]}"
             )
-        return np.einsum("fjkl,...kfl->...fj", self.T, e)
+        out = np.einsum("fjkl,...kfl->...fj", self.T, e)
+        if self.E0 is not None:
+            out = out + self.E0
+        return out
+
+    def apply_nowind(self, efth_boundary: np.ndarray) -> np.ndarray:
+        """Transfer with the wind term omitted, for isolating its increment.
+
+        Only available on an operator built with wind; the rays are the same,
+        so this differs from :meth:`apply` purely by the wind contribution to
+        the path exponent (and by the ``E0`` seed, which is entirely wind).
+        """
+        if self.T_nowind is None:
+            raise ValueError("operator was not built with wind; no no-wind transfer stored")
+        e = np.asarray(efth_boundary, dtype=float)
+        return np.einsum("fjkl,...kfl->...fj", self.T_nowind, e)
 
     # ------------------------------------------------------------------ #
     def to_dataset(self) -> xr.Dataset:
+        data_vars = {
+            "T": (("freq", "dir", "bp", "dir_b"), self.T),
+            "bp_x": (("bp",), self.bp_x),
+            "bp_y": (("bp",), self.bp_y),
+        }
+        if self.E0 is not None:
+            data_vars["E0"] = (("freq", "dir"), self.E0)
+        if self.T_nowind is not None:
+            data_vars["T_nowind"] = (("freq", "dir", "bp", "dir_b"), self.T_nowind)
         ds = xr.Dataset(
-            {
-                "T": (("freq", "dir", "bp", "dir_b"), self.T),
-                "bp_x": (("bp",), self.bp_x),
-                "bp_y": (("bp",), self.bp_y),
-            },
+            data_vars,
             coords={
                 "freq": self.freq,
                 "dir": self.dir_t,
@@ -174,6 +201,8 @@ class TransferOperator:
             target_y=target_y,
             depth_target=depth_target,
             attrs=attrs,
+            E0=ds["E0"].values if "E0" in ds else None,
+            T_nowind=ds["T_nowind"].values if "T_nowind" in ds else None,
         )
 
     @classmethod
@@ -194,6 +223,10 @@ def build_operator(
     d_min: float = 0.3,
     cf_jonswap: float | None = 0.038,
     boundary_mode: str = "bbox",
+    wind: WindField | tuple[float, float] | xr.Dataset | None = None,
+    agrow: bool = False,
+    max_growth: float | None = 100.0,
+    fetch: float | None = None,
 ) -> TransferOperator:
     """Build a transfer operator by backward ray tracing.
 
@@ -225,9 +258,45 @@ def build_operator(
         (use when the target sits inside a ring of sites). In ``line``/``ring``
         mode a ray that reaches the bbox without crossing the geometry falls
         back to its nearest site (a warning reports the escaped fraction).
+    wind : stationary wind forcing with SWAN's formulations, integrated along
+        each ray path. Either a uniform ``(speed, direction)`` pair (U10 [m/s],
+        coming-from nautical deg), a gridded ``xarray.Dataset`` snapshot (see
+        :meth:`waveray.wind.WindField.from_dataset`), or a prebuilt
+        :class:`waveray.wind.WindField`. Adds the exponential growth of Komen
+        et al. (1984) to the ray-path exponent; ``None`` (default) disables
+        wind input. Note only the wind *input* source term is represented —
+        SWAN's nonlinear sinks (whitecapping, quadruplets) cannot live in a
+        linear operator — so this suits short downscale fetches.
+    agrow : also integrate the linear growth of Cavaleri and Malanotte-Rizzoli
+        (1981) (SWAN's AGROW keyword) into an additive spectrum ``E0`` stored
+        on the operator; it seeds locally generated wind sea in bins with no
+        boundary energy. Requires ``wind``. With ``agrow=True`` the operator
+        must be applied to spectra in m^2 / Hz / deg.
+    fetch : over-water fetch [m] for the wind-sea saturation closure. Default
+        None measures it from the bathymetry, marching upwind from the target
+        until land or the domain edge — which understates the fetch when the
+        domain is smaller than the sea that reaches it. Give it explicitly
+        when you know the real fetch.
+    max_growth : ceiling on the net wind-input energy gain of any single ray
+        path (default 100 = a hundredfold energy gain; ``None`` disables it).
+        Wind input on its own is *unbounded*: SWAN balances it against
+        whitecapping and quadruplets, which are nonlinear in E and cannot
+        live in a linear operator, so a long path at high frequency (where
+        cg is small and the residence time large) would otherwise grow
+        without limit — SWAN itself refuses to run a third-generation wind
+        without quadruplets. Hitting this ceiling means the case is outside
+        the regime where wind input is meaningful here; a warning reports
+        the affected fraction. See the wind forcing guide.
     """
     if boundary_mode not in ("bbox", "line", "ring"):
         raise ValueError(f"boundary_mode must be 'bbox', 'line' or 'ring', got {boundary_mode!r}")
+    wind_field = as_wind_field(wind, grid)
+    if agrow and wind_field is None:
+        raise ValueError("agrow=True requires wind forcing")
+    if max_growth is not None and not max_growth > 1.0:
+        # <= 0 would make log() nan/inf and silently disable the guard or zero
+        # the operator; <= 1 would forbid any growth at all
+        raise ValueError(f"max_growth must be greater than 1, got {max_growth!r}")
     freqs = np.asarray(freqs, dtype=float)
     dirs = np.asarray(dirs, dtype=float)
     boundary_xy = np.atleast_2d(np.asarray(boundary_xy, dtype=float))
@@ -270,7 +339,9 @@ def build_operator(
 
     nf, ndt, ndb, kk = freqs.size, dirs.size, dirs.size, boundary_xy.shape[0]
     t_op = np.zeros((nf, ndt, kk, ndb))
-    n_rays = n_lost = n_landed = n_exited = n_escaped = 0
+    t_nw = np.zeros((nf, ndt, kk, ndb)) if wind_field is not None else None
+    e0 = np.zeros((nf, ndt)) if agrow else None
+    n_rays = n_lost = n_landed = n_exited = n_escaped = n_clipped = 0
 
     # Sub-ray direction offsets across each target bin (bin-centre sampling).
     offsets = (np.arange(nsub) + 0.5) / nsub - 0.5  # in units of bin width
@@ -281,18 +352,36 @@ def build_operator(
 
     for i, f in enumerate(freqs):
         omega = 2.0 * np.pi * f
-        fld = SpeedField.build(grid, omega, d_min=d_min, cf_jonswap=cf_jonswap)
+        fld = SpeedField.build(
+            grid, omega, d_min=d_min, cf_jonswap=cf_jonswap, wind=wind_field, agrow=agrow
+        )
         ccg_t = float(ccg(np.array(omega), np.array(depth_t)))
 
         fan = trace_backward(
-            fld, tx, ty, theta0, ds=ds, max_steps=max_steps, d_min=d_min, boundary_line=line
+            fld,
+            tx,
+            ty,
+            theta0,
+            ds=ds,
+            max_steps=max_steps,
+            d_min=d_min,
+            boundary_line=line,
+            max_growth=max_growth,
         )
 
+        if fan.growth_clipped is not None:
+            n_clipped += int(fan.growth_clipped.sum())
         ok = fan.status == STATUS_EXITED
         n_rays += fan.status.size
         n_lost += int(np.sum(fan.status == STATUS_LOST))
         n_landed += int(np.sum(fan.status == STATUS_LANDED))
         n_exited += int(np.sum(ok))
+        if e0 is not None:
+            # additive wind-generated energy, averaged over sub-rays. Every
+            # ray contributes: a blocked (landed/lost) ray carries no boundary
+            # energy but wind still generates waves along its wet path.
+            jall = np.repeat(np.arange(ndt), nsub)
+            np.add.at(e0[i], jall, fan.gen / (nsub * ccg_t))
         if not ok.any():
             continue
         jbin = np.repeat(np.arange(ndt), nsub)[ok]
@@ -301,7 +390,9 @@ def build_operator(
         # direction-bin interpolation below it yields the energy-flux
         # directional transform (the interpolation column-sum supplies the
         # dtheta_t/dtheta_b Jacobian). Do not "fix" this to a flux ratio.
-        coef = ccg(omega, depth_exit) / ccg_t / nsub * np.exp(-fan.atten[ok])
+        base = ccg(omega, depth_exit) / ccg_t / nsub
+        coef = base * np.exp(-fan.atten[ok])
+        coef_nw = base * np.exp(-fan.atten_nowind[ok]) if t_nw is not None else None
 
         # boundary-point (alongshore) weights: from the bbox-perimeter position
         # in bbox mode, or from the crossed line segment in line/ring mode.
@@ -340,6 +431,8 @@ def build_operator(
         for kb, wb in ((klo, wlo), (khi, whi)):
             for lb, wd in ((llo, vlo), (lhi, vhi)):
                 np.add.at(t_op[i], (jbin, kb, lb), coef * wb * wd)
+                if t_nw is not None:
+                    np.add.at(t_nw[i], (jbin, kb, lb), coef_nw * wb * wd)
 
     escaped_fraction = n_escaped / max(n_exited, 1)
     if line is not None and escaped_fraction > 0.01:
@@ -349,6 +442,48 @@ def build_operator(
             "Widen the line so it spans the ray fan, or use boundary_mode='ring'.",
             stacklevel=2,
         )
+
+    clipped_fraction = n_clipped / max(n_rays, 1)
+    if clipped_fraction > 0.0:
+        warnings.warn(
+            f"wind growth hit the max_growth={max_growth:g} ceiling on "
+            f"{clipped_fraction:.1%} of rays. Wind input alone is unbounded (SWAN balances "
+            "it with whitecapping and quadruplets, which a linear operator cannot carry), "
+            "so these paths are outside the regime where it is meaningful: shorten the "
+            "domain, drop the high-frequency bins, or reduce the wind.",
+            stacklevel=2,
+        )
+
+    wind_attrs: dict = {"agrow": int(agrow), "growth_clipped_fraction": clipped_fraction}
+    if wind_field is None:
+        wind_attrs["wind_source"] = "none"
+    elif isinstance(wind, (tuple, list)):
+        wind_attrs["wind_source"] = "uniform"
+        wind_attrs["wind_speed"] = float(wind[0])
+        wind_attrs["wind_dir"] = float(wind[1])
+    elif isinstance(wind, WindField):
+        wind_attrs["wind_source"] = "windfield"
+    else:
+        wind_attrs["wind_source"] = "gridded"
+
+    if wind_field is not None:
+        # Wind speed and over-water fetch at the target, for the saturation
+        # cap applied in SiteModel.transform. Both are fixed by the stationary
+        # wind and the bathymetry, so they belong on the operator.
+        usx = float(bilinear(wind_field.usx, grid.x, grid.y, np.array([tx]), np.array([ty]))[0])
+        usy = float(bilinear(wind_field.usy, grid.x, grid.y, np.array([tx]), np.array([ty]))[0])
+        u_star = float(np.hypot(usx, usy))
+        wind_attrs["u_star_target"] = u_star
+        wind_attrs["u10_target"] = float(u10_from_u_star(u_star))
+        wind_attrs["wind_dir_target"] = float(theta_to_dir(np.arctan2(usy, usx)))
+        # An explicit fetch overrides the geometric one, which is bounded by
+        # the domain and so understates a target open to a long sea.
+        wind_attrs["wind_fetch"] = float(
+            fetch
+            if fetch is not None
+            else upwind_fetch(grid, tx, ty, wind_attrs["wind_dir_target"], d_min=d_min)
+        )
+        wind_attrs["fetch_source"] = "given" if fetch is not None else "geometric"
 
     return TransferOperator(
         T=t_op,
@@ -368,8 +503,11 @@ def build_operator(
             # 0.0 == friction disabled (physically identical to None)
             "cf_jonswap": 0.0 if cf_jonswap is None else cf_jonswap,
             "boundary_mode": boundary_mode,
+            **wind_attrs,
             "lost_fraction": n_lost / max(n_rays, 1),
             "landed_fraction": n_landed / max(n_rays, 1),
             "escaped_fraction": escaped_fraction,
         },
+        E0=e0,
+        T_nowind=t_nw,
     )
