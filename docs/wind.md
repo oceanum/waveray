@@ -332,6 +332,35 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 | Swell + wind, 15 km, 12 m/s | 0.96 – 1.09 | 1.03 – 1.25 |
 | Wind sea from calm, 12 m/s | 1.01 – 1.05 | 2.18 – 3.25 |
 
+#### Wind direction
+
+The `max[0, cos(theta - theta_w)]` cutoff means the wind's bearing relative to
+the swell matters as much as its speed. Measured on the plane beach with a
+2 m / 10 s swell from the west and 12 m/s wind, closure on:
+
+| Wind | waveray / SWAN | waveray vs its own no-wind |
+|---|---|---|
+| Onshore (270°, with the swell) | 0.96 – 1.09 | ×1.06 – 1.20 |
+| Oblique onshore (225°, 45°) | 0.97 – 1.10 | ×1.10 – 1.18 |
+| Alongshore (180°) | 0.99 – 1.05 | ×1.10 – 1.15 |
+| **Offshore (90°, opposed)** | **0.88 – 1.01** | **×1.00 – 1.04** |
+
+The offshore row is the one to read carefully, and it fails in the *opposite*
+direction to the others. The cutoff correctly gives the shoreward swell no
+growth at all, so waveray barely moves — but SWAN gains 4–17 % at the offshore
+targets, because it raises an **offshore-going wind sea** over the fetch back
+to the upwind boundary, and that energy counts toward Hs. waveray seeds those
+opposed bins far more weakly, so under a land breeze it **under**-predicts by
+6–12 %, where onshore it over-predicts.
+
+Two caveats on those numbers. The offshore case is also the least reproducible
+in SWAN — it moved 6–9 % between runs, against 3–4 % elsewhere — so treat its
+bounds as loose. And the mean direction is less well reproduced under a
+cross-wind: with an alongshore wind at the 20 m target SWAN turns the mean
+direction to 251° where waveray gives 264°, because waveray adds energy only
+where the cosine projection is positive and has no nonlinear transfer to
+reorient the sea toward the wind.
+
 The closure never engages on a spectrum the wind did not change, so the
 sub-percent propagation results are unaffected by it — that is a property of
 the design, not a measurement.
