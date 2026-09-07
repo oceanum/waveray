@@ -172,9 +172,9 @@ def test_wind_direction_on_swell(tmp_path, wind_dir, label, lo, hi):
     runs of each case:
 
         offshore    0.88 - 1.01
-        alongshore  0.99 - 1.05
+        alongshore  0.99 - 1.06
         oblique     0.97 - 1.10
-        onshore     0.96 - 1.09   (the dedicated test above)
+        onshore     0.95 - 1.09   (the dedicated test above)
 
     The offshore case is the least reproducible of the four: SWAN moved 6-9 %
     between runs there (Hs 2.298 -> 2.158 m at the 20 m target), against the
@@ -209,11 +209,12 @@ def test_offshore_wind_is_the_cutoff_working(tmp_path):
     (measured: within 4 % of its no-wind answer, and the saturation closure is
     inert because there is no increment to cap).
 
-    SWAN meanwhile *gains* 4-17 % at the offshore targets, because it raises
-    an offshore-going wind sea over the fetch back to the upwind boundary and
-    that energy counts toward Hs. waveray seeds those bins far more weakly, so
-    it under-predicts by 6-12 % — the opposite sign to its onshore bias, and
-    worth knowing before trusting a site under a land breeze. The spread on
+    SWAN meanwhile *gains* as much as 17 % at the deeper targets, because it
+    raises an offshore-going wind sea over the fetch back to the upwind
+    boundary and that energy counts toward Hs. waveray seeds those bins far
+    more weakly, so it under-predicts by up to 12 % there — the opposite sign
+    to its onshore bias, and worth knowing before trusting a site under a land
+    breeze. The gap closes shoreward, reaching parity at the 6 m target. The spread on
     those figures is SWAN's own: this case moved 6-9 % between runs.
     """
     case = wind_on_swell_case(name="ws_offshore", wind_dir=90.0)

@@ -26,8 +26,8 @@ loop.
 
 Executed notebooks with plots live in [`notebooks/`](https://github.com/oceanum/waveray/tree/main/notebooks):
 an end-to-end Dutch-coast downscaling, a reef-coast validation study, boundary-line
-termination, and two head-to-head comparisons against stationary SWAN (idealised
-bathymetry, and wind input).
+termination, and three head-to-head comparisons against stationary SWAN (idealised
+bathymetry, wind input, and wind direction).
 
 ## The idea in one paragraph
 

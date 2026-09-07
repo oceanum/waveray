@@ -336,13 +336,14 @@ in the official `delftwaves/swan` docker image on identical boundary spectra
 
 The `max[0, cos(theta - theta_w)]` cutoff means the wind's bearing relative to
 the swell matters as much as its speed. Measured on the plane beach with a
-2 m / 10 s swell from the west and 12 m/s wind, closure on:
+2 m / 10 s swell from the west and 12 m/s wind, closure on, across three
+runs of each case:
 
 | Wind | waveray / SWAN | waveray vs its own no-wind |
 |---|---|---|
-| Onshore (270°, with the swell) | 0.96 – 1.09 | ×1.06 – 1.20 |
+| Onshore (270°, with the swell) | 0.95 – 1.09 | ×1.06 – 1.20 |
 | Oblique onshore (225°, 45°) | 0.97 – 1.10 | ×1.10 – 1.18 |
-| Alongshore (180°) | 0.99 – 1.05 | ×1.10 – 1.15 |
+| Alongshore (180°) | 0.99 – 1.06 | ×1.10 – 1.15 |
 | **Offshore (90°, opposed)** | **0.88 – 1.01** | **×1.00 – 1.04** |
 
 The offshore row is the one to read carefully, and it fails in the *opposite*
@@ -351,7 +352,14 @@ growth at all, so waveray barely moves — but SWAN gains 4–17 % at the offsho
 targets, because it raises an **offshore-going wind sea** over the fetch back
 to the upwind boundary, and that energy counts toward Hs. waveray seeds those
 opposed bins far more weakly, so under a land breeze it **under**-predicts by
-6–12 %, where onshore it over-predicts.
+up to 12 % at the deeper targets, where onshore it over-predicts. The gap
+closes shoreward: at the 6 m target the two agree to 0.5 %.
+
+The same shoreward trend runs through all four directions. waveray sits 1–6 %
+*below* SWAN at 20 m and 0.5–10 % *above* it at 6 m, because its wind increment
+keeps growing with fetch while SWAN's is already limited by whitecapping — so
+the error changes sign along the profile and no single scaling constant removes
+it.
 
 Two caveats on those numbers. The offshore case is also the least reproducible
 in SWAN — it moved 6–9 % between runs, against 3–4 % elsewhere — so treat its
@@ -360,6 +368,11 @@ cross-wind: with an alongshore wind at the 20 m target SWAN turns the mean
 direction to 251° where waveray gives 264°, because waveray adds energy only
 where the cosine projection is positive and has no nonlinear transfer to
 reorient the sea toward the wind.
+
+These four runs are plotted — the domain setup, the height profiles, and the
+directional spectra at the target that show the offshore case as a *missing
+lobe* rather than a scaling error — in
+[`notebooks/06_swan_validation_wind_direction.ipynb`](https://github.com/oceanum/waveray/blob/main/notebooks/06_swan_validation_wind_direction.ipynb).
 
 The closure never engages on a spectrum the wind did not change, so the
 sub-percent propagation results are unaffected by it — that is a property of

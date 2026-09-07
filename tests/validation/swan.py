@@ -193,6 +193,24 @@ def swan_version(prt_path: Path) -> str:
     return "unknown"
 
 
+def read_spectra(workdir: Path, name: str):
+    """SWAN's 2D output spectra at the case's target points.
+
+    Returns the ``wavespectra`` dataset written by ``SPECOUT ... SPEC2D``, with
+    ``dir`` in coming-from nautical degrees. Two things to know before indexing
+    it:
+
+    * The output points come back as a **lat/lon grid** when they happen to
+      form one -- targets sharing a y arrive as (time, lat=1, lon=N, freq, dir),
+      not as a ``site`` dim -- so select by coordinate, not by position.
+    * SWAN's directional bins are staggered half a bin from this package's
+      (5, 15, ... vs 0, 10, ...), which matters when overlaying the two.
+    """
+    from wavespectra import read_swan
+
+    return read_swan(str(Path(workdir) / f"{name}.sp2"))
+
+
 def read_table(path: Path, columns: list[str]) -> dict[str, np.ndarray]:
     """Parse a SWAN TABLE ... HEAD output into named 1D arrays."""
     rows = []
