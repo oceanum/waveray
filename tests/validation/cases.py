@@ -412,10 +412,18 @@ def real_bathymetry_case(
 def wind_on_swell_case(
     name: str = "windswell",
     u10: float = 12.0,
+    wind_dir: float = 270.0,
     swan_full_physics: bool = True,
     **kwargs,
 ) -> Case:
     """Plane beach with swell *and* wind over a 15 km fetch.
+
+    ``wind_dir`` is coming-from nautical degrees, so with the default swell
+    (``dpm=270``, arriving from the west and propagating shoreward) 270 is an
+    **onshore** wind aligned with the swell, 90 is **offshore** and opposed to
+    it, and 180 blows alongshore. The opposed case is the sharpest test of the
+    Komen ``max[0, cos(theta - theta_w)]`` cutoff, which zeroes the growth of
+    waves running into the wind.
 
     With ``swan_full_physics=True`` (default) this is the realistic downscale
     configuration: SWAN dissipates as well as generates, waveray adds only the
@@ -428,6 +436,6 @@ def wind_on_swell_case(
     term, not to this implementation of it.
     """
     case = plane_beach_case(name=name, **kwargs)
-    case.wind = (u10, 270.0)
+    case.wind = (u10, wind_dir)
     case.swan_full_physics = swan_full_physics
     return case

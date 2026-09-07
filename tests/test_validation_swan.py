@@ -155,6 +155,94 @@ def test_wind_on_swell_bounded_departure(tmp_path):
     assert np.all(ratio < 1.25), f"departure from SWAN grew to {ratio.max():.2f}"
 
 
+@pytest.mark.parametrize(
+    ("wind_dir", "label", "lo", "hi"),
+    [
+        (90.0, "offshore, against the swell", 0.80, 1.15),
+        (180.0, "alongshore, from the south", 0.85, 1.20),
+        (225.0, "oblique onshore, 45 deg", 0.85, 1.20),
+    ],
+)
+def test_wind_direction_on_swell(tmp_path, wind_dir, label, lo, hi):
+    """Swell boundary under wind from directions other than dead onshore.
+
+    The swell arrives from the west and runs shoreward, so 90 deg is an
+    offshore wind blowing straight into it, 180 blows alongshore and 225 is
+    45 deg oblique. Measured ratios (waveray/SWAN, closure on), spanning two
+    runs of each case:
+
+        offshore    0.88 - 1.01
+        alongshore  0.99 - 1.05
+        oblique     0.97 - 1.10
+        onshore     0.96 - 1.09   (the dedicated test above)
+
+    The offshore case is the least reproducible of the four: SWAN moved 6-9 %
+    between runs there (Hs 2.298 -> 2.158 m at the 20 m target), against the
+    3-4 % seen elsewhere, so its bounds are correspondingly loose. A wind
+    opposing the swell makes the nonlinear solve harder, not easier.
+    """
+    case = wind_on_swell_case(name=f"ws{int(wind_dir)}", wind_dir=wind_dir)
+    sw, wr = _run_both(case, tmp_path, transform_kwargs={"saturation": True})
+    _report(case, sw, wr, f"plane beach, swell + 12 m/s wind from {wind_dir:.0f} deg ({label})")
+
+    nowind = plane_beach_case(name=f"ws{int(wind_dir)}_ref", dpm=270.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wr_nowind = nowind.run_waveray()["HSIGN"]
+
+    ratio = wr["HSIGN"] / sw["HSIGN"]
+    change = wr["HSIGN"] / wr_nowind
+    print(f"  waveray/SWAN {np.round(ratio, 3)}, waveray vs its no-wind {np.round(change, 3)}")
+
+    assert np.all(ratio > lo), f"waveray fell to {ratio.min():.2f} of SWAN"
+    assert np.all(ratio < hi), f"waveray rose to {ratio.max():.2f} of SWAN"
+    # wind must never remove energy: Komen's cutoff zeroes growth against the
+    # wind, it does not dissipate
+    assert np.all(wr["HSIGN"] >= wr_nowind - 1e-9), "wind removed energy from the swell"
+
+
+def test_offshore_wind_is_the_cutoff_working(tmp_path):
+    """An opposing wind must leave the swell essentially alone.
+
+    ``B = max[0, 0.25 rho_aw (28 u*/c cos(theta - theta_w) - 1)] sigma`` is
+    zero for waves running into the wind, so waveray adds almost nothing here
+    (measured: within 4 % of its no-wind answer, and the saturation closure is
+    inert because there is no increment to cap).
+
+    SWAN meanwhile *gains* 4-17 % at the offshore targets, because it raises
+    an offshore-going wind sea over the fetch back to the upwind boundary and
+    that energy counts toward Hs. waveray seeds those bins far more weakly, so
+    it under-predicts by 6-12 % — the opposite sign to its onshore bias, and
+    worth knowing before trusting a site under a land breeze. The spread on
+    those figures is SWAN's own: this case moved 6-9 % between runs.
+    """
+    case = wind_on_swell_case(name="ws_offshore", wind_dir=90.0)
+    sw, wr = _run_both(case, tmp_path, transform_kwargs={"saturation": True})
+    _report(case, sw, wr, "plane beach, swell + 12 m/s OFFSHORE wind (opposed)")
+
+    nowind = plane_beach_case(name="ws_offshore_ref", dpm=270.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wr_nowind = nowind.run_waveray()["HSIGN"]
+        uncapped = case.run_waveray(transform_kwargs={"saturation": False})["HSIGN"]
+
+    change = wr["HSIGN"] / wr_nowind
+    print(
+        f"  waveray vs its no-wind: {np.round(change, 3)} (measured 1.00-1.04)"
+        f"\n  SWAN vs waveray's no-wind: {np.round(sw['HSIGN'] / wr_nowind, 3)}"
+    )
+    # the cutoff: an opposing wind barely moves the answer
+    assert np.all(change < 1.10), f"opposing wind grew the sea by {change.max():.2f}"
+    assert np.all(change >= 1.0 - 1e-9), "opposing wind removed energy"
+    # with no increment to speak of, the closure has nothing to do
+    assert np.allclose(wr["HSIGN"], uncapped, rtol=5e-3), (
+        "the saturation closure engaged on an opposed wind, where the Komen "
+        "cutoff should have left no increment"
+    )
+    # and SWAN, which does generate an offshore-going sea, sits above waveray
+    assert np.all(wr["HSIGN"] / sw["HSIGN"] > 0.80)
+
+
 def test_wind_growth_from_zero(tmp_path):
     """Fetch-limited growth from calm, against a full-physics SWAN run.
 
