@@ -105,7 +105,8 @@ the target rather than along the path.
 | Plane beach, 30° oblique — refracted direction | 246.0→256.7° | 246.7→257.4° | **< 0.8°** (Hs 0.62 %) |
 | Real GEBCO bathymetry (Noordwijk, NL) | Hs 2.328→2.078 m | 2.483→2.490 m | 6.7 – 19.8 % |
 | Circular island, deep lee | Hs 0.466 m | 0.675 m | ×1.45 |
-| Swell + 12 m/s wind, 15 km fetch | Hs 2.176→2.470 m | 2.096→2.686 m | ×0.96 – 1.09 |
+| Swell + 12 m/s onshore wind, 15 km fetch | Hs 2.176→2.470 m | 2.096→2.686 m | ×0.95 – 1.09 |
+| Swell + 12 m/s **offshore** wind (opposed) | Hs 2.158→2.142 m | 2.025→2.153 m | ×0.88 – 1.01 |
 | Wind sea from calm, peak resolved | Hs 0.322→0.644 m | 0.332→0.653 m | ×1.01 – 1.05 |
 
 Reading the table: on the analytic beach the operator is essentially exact —
@@ -115,7 +116,7 @@ alongshore-uniform. The island lee is the deep shadow behind a blocking
 obstacle, where neither model has diffraction and a ray model and a spectral
 model are entitled to disagree; treat sheltered-lee heights as indicative.
 
-The two wind rows are within a few percent, but only because of the
+The onshore wind rows are within a few percent, but only because of the
 [wind-sea saturation cap](wind.md#wind-sea-saturation-the-closure). Without
 it the same cases run 1.03–1.25× and 2.18–3.25×: wind input is a source with
 no sink, and the operator amplifies the boundary spectrum's tail without
@@ -123,6 +124,15 @@ limit. The cap supplies the outcome of the balance it cannot model, and never
 engages on a swell-only spectrum — which is why the propagation rows above are
 unaffected by it. It is an empirical closure calibrated against these SWAN
 runs, not one of SWAN's source terms.
+
+The offshore row is the one structural failure in the table, and it is not a
+calibration problem. SWAN raises an offshore-going wind sea over the fetch and
+counts it at the target; waveray's Komen cutoff gives no growth to the
+shoreward-running rays that reach the target, so it never generates that lobe
+at all. Wind *direction* is covered in full — including the directional spectra
+that show the missing lobe — in
+[`notebooks/06_swan_validation_wind_direction.ipynb`](https://github.com/oceanum/waveray/blob/main/notebooks/06_swan_validation_wind_direction.ipynb)
+and in [the wind docs](wind.md#wind-direction).
 
 Two supporting tests make the point sharper. Strip SWAN's sinks *and* the cap,
 so both models carry wind input alone, and the agreement is tens of percent —

@@ -193,13 +193,22 @@ class Case:
             )
         return table
 
-    def run_waveray(
-        self, transform_kwargs: dict | None = None, **build_kwargs
-    ) -> dict[str, np.ndarray]:
-        """Build one operator per target and transform the boundary spectrum.
+    def boundary_stack(self) -> xr.DataArray:
+        """The boundary spectrum repeated over the K sites the operator wants."""
+        k = self.boundary_xy.shape[0]
+        if self.efth is not None:
+            return xr.concat([self.efth] * k, dim="site").transpose("site", "freq", "dir")
+        return xr.DataArray(  # wind-sea only: zero boundary energy
+            np.zeros((k, self.freqs.size, self.dirs.size)),
+            dims=("site", "freq", "dir"),
+            coords={"freq": self.freqs, "dir": self.dirs},
+        )
 
-        Returns Hs / Tm01 / Dir arrays in the same order as ``targets``,
-        computed with the package's own quadrature.
+    def waveray_spectra(self, transform_kwargs: dict | None = None, **build_kwargs) -> np.ndarray:
+        """Transformed ``efth`` at every target, ``(n_targets, nf, ndir)``.
+
+        Same path as :meth:`run_waveray`, which reduces these to integrated
+        parameters; the notebooks want the spectra themselves.
         """
         grid = self.grid
         kwargs = dict(cf_jonswap=None, nsub=5)
@@ -207,18 +216,8 @@ class Case:
         if self.wind is not None:
             kwargs.setdefault("wind", self.wind)
             kwargs.setdefault("agrow", True)
-
-        k = self.boundary_xy.shape[0]
-        if self.efth is not None:
-            e_b = xr.concat([self.efth] * k, dim="site").transpose("site", "freq", "dir")
-        else:  # wind-sea only: zero boundary energy
-            e_b = xr.DataArray(
-                np.zeros((k, self.freqs.size, self.dirs.size)),
-                dims=("site", "freq", "dir"),
-                coords={"freq": self.freqs, "dir": self.dirs},
-            )
-
-        hs, tm01, pdir = [], [], []
+        e_b = self.boundary_stack()
+        out = []
         for tx, ty in self.targets:
             model = SiteModel.build(
                 bathy=grid,
@@ -228,7 +227,21 @@ class Case:
                 dirs=self.dirs,
                 **kwargs,
             )
-            out = model.transform(e_b, breaking=False, **(transform_kwargs or {})).values
+            out.append(model.transform(e_b, breaking=False, **(transform_kwargs or {})).values)
+        return np.stack(out)
+
+    def run_waveray(
+        self, transform_kwargs: dict | None = None, **build_kwargs
+    ) -> dict[str, np.ndarray]:
+        """Build one operator per target and transform the boundary spectrum.
+
+        Returns Hs / Tm01 / Dir arrays in the same order as ``targets``,
+        computed with the package's own quadrature.
+        """
+        spectra = self.waveray_spectra(transform_kwargs=transform_kwargs, **build_kwargs)
+
+        hs, tm01, pdir = [], [], []
+        for out in spectra:
             m0 = spectral_moment(out[None], self.freqs, self.dirs, n=0)[0]
             m1 = spectral_moment(out[None], self.freqs, self.dirs, n=1)[0]
             hs.append(4.0 * np.sqrt(max(m0, 0.0)))
