@@ -9,6 +9,7 @@ on:
       - ".github/workflows/docs.yml"
       - "pyproject.toml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "docs/**"
       - "mkdocs.yml"
@@ -23,6 +24,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
